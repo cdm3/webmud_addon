@@ -18,7 +18,7 @@ Group:&nbsp<select id='groupSelect' onchange=\"groupSelected('groupSelect','cust
 <button class='btn btn-default' onclick=\"stopWalking('now')\">Now!</button>\
 <button class='btn btn-default' onclick=\"stopWalking('end of loop')\">End Of Loop</button>\
 </p>\
-<p>Fine tune step delay (ms): <input type='number' id='stepDelay' name = 'stepDelay' min='1' value='2000' style='width:50px;'/>\
+<p>Fine tune step delay (ms): <input type='number' id='stepDelay' name = 'stepDelay' min='1' value='2500' style='width:60px;'/>\
 </p>\
 </div>\
 <div id='autoCommands' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
@@ -99,6 +99,10 @@ are pasted into the box, click Import.\
 </div>\
 ").insertAfter("#divExpTimer");
 
+$("<div id='addonStatus'>\
+<p>Addon Status: <label id=\"addonStatusText\"></label></p>\
+</div>").insertAfter("#mainScreen");
+
 //Constants used across many functions
 const PATH_SELECT_ID = 'custPathSelect';
 const GROUP_SELECT_ID = 'groupSelect';
@@ -113,6 +117,7 @@ let aiRunning = false;
 let stopWalkingFlag = '';
 let sendAutoCmds = false;
 let lastSwingTime = Date.now();
+let combatEndTime = Date.now();
 
 //Call loading script
 loadPlayer();
@@ -155,54 +160,74 @@ function lookupPathAndMove(pathSelectId, delaySelectId, runPath, loopPath) {
 
   //If the user wants to loop, set the loop value to true
   stopWalkingFlag = '';
-  walkPath(path, stepDelay, runPath, loopPath);
+
+  //if the player want to run (no combat), disable AI combat
+  if (runPath) {
+    sendMessageDirect('DisableAI Combat');
+    document.getElementById('chkAICombat').checked = false;
+  }
+
+  //start the path
+  walkPath(path, stepDelay, loopPath, selectedPath);
+
+  //alert the player that the path/loop as started
+  if (loopPath) {
+    notifyPlayer('greenyellow', 'Looping ' + selectedPath);
+  } else {
+    notifyPlayer('greenyellow', 'Walking path: ' + selectedPath);
+  }
 }
 
-function walkPath(path, stepDelay, runPath, loopPath) {
+function walkPath(path, stepDelay, loopPath, selectedPath) {
   let pathArray = path.split(',');
   let genObj = genFunc(pathArray);
 
-  //alert the player that the path/loop as started
-  notifyPlayer('greenyellow', 'Path/Loop started');
-
   let interval = setInterval(() => {
-    //if the runPath flag is set to true, always set inCombat to false
-    //so the player will continue to run
-    if (runPath) {
-      inCombat = false;
-    }
     //The following if statement checks a bunch of boolians so I use 'not' logic
     //which lets me keep the line short
-    if (!(inCombat || playerMoving || playerResting || aiRunning)) {
+    if (
+        !(inCombat || playerMoving || playerResting || aiRunning)
+        && ((combatEndTime + 1000) < Date.now())
+      ) {
+
+      //get the next step
       let val = genObj.next();
+
+      //if the path is done
       if (val.done || stopWalkingFlag === 'now') {
+        //stop the timed interval since the path is done
         clearInterval(interval);
 
         //Determine the reason or stopping and notify the player
         if (loopPath && stopWalkingFlag === '') {
           //if the player wants to loop, recall the function using the
           //same conditions
-          notifyPlayer('greenyellow', 'Loop Complete, starting another loop');
+          notifyPlayer('greenyellow', 'Loop Complete, re-looping ' + selectedPath);
 
-          walkPath(path, stepDelay, runPath, loopPath);
+          walkPath(path, stepDelay, loopPath, selectedPath);
 
         } else if (stopWalkingFlag === 'now') {
           //if the player asked to stop now, stop and alert them
-          genOjb = null;  //reset the generator
-          $("#mainScreen").append("<span style='color: red'>**** WALKING/LOOPING STOPPED NOW! ****</span><br />");
+          genObj = null;  //reset the generator
+          notifyPlayer('red', 'WALKING/LOOPING STOPPED NOW!');
           stopWalkingFlag = '';
 
         } else if (stopWalkingFlag === 'end of loop') {
           //if the player was looping but wanted to stop at the end of the
           //current loop, stop and let them know the current loop is done
-          $("#mainScreen").append("<span style='color: yellow'>**** STOPPED: end of current loop ****</span><br />");
+          notifyPlayer('yellow', 'STOPPED: end of current loop');
           stopWalkingFlag = '';
 
         } else {
           //send a message to player telling them the path is complete
-          $("#mainScreen").append("<span style='color: lime'>**** Path complete, you have arrived ****</span><br />");
+          notifyPlayer('lime', 'Path complete, you have arrived');
           stopWalkingFlag = '';
+          //re-enable combat in case the user was running the path
         }
+
+        //re-enable combat if it was disabled for a run
+        sendMessageDirect('EnableAI Combat');
+        document.getElementById('chkAICombat').checked = true;
 
       } else {
         //Send the next step
@@ -212,7 +237,9 @@ function walkPath(path, stepDelay, runPath, loopPath) {
       //check for combat inactivity where combat is set to true but a swing
       //hasn't happened for a least 10000 miliseconds (10 seconds)
       if (inCombat === true && (lastSwingTime + 10000) < Date.now()) {
-        inCombat === false;
+        inCombat = false;
+        //reset swing timer so combat doesn't disable right away
+        lastSwingTime = (Date.now() + 10000);
       }
     }
   }, stepDelay);
@@ -559,6 +586,8 @@ function addToGroup(selectedGroup, pathToAdd) {
   //write the updated path list to the group
   storePath(selectedGroup, updatedPaths);
 
+  //alert the player
+  notifyPlayer('lime', pathToAdd + ' added to group ' + selectedGroup);
   //reload all of the selection lists
   reloadSelectors();
 }
@@ -581,6 +610,9 @@ function removeFromGroup(selectedGroup, pathToRemove) {
   //write the updated path list back to local storage
   storePath(selectedGroup, selectedGroupPaths);
 
+  //alert the player
+  notifyPlayer('yellow', pathToRemove + ' removed from group ' + selectedGroup);
+
   //reload all of the selection lists
   reloadSelectors();
 }
@@ -602,7 +634,7 @@ function newGroup() {
     //reload selectors
     reloadSelectors();
 
-    notifyPlayer('green', 'New group successfully added');
+    notifyPlayer('lime', 'New group ' + groupToAdd + ' successfully added');
   }
 }
 
@@ -634,7 +666,7 @@ function deleteGroup(groupToDelete) {
     reloadSelectors();
 
     //notify the player
-    notifyPlayer('red', 'Group successfully deleted');
+    notifyPlayer('red', 'Group ' + groupToDelete + ' successfully deleted');
   }
 }
 
@@ -686,8 +718,9 @@ function saveGroup() {
 
 function notifyPlayer(msgColor, msgText) {
   //Used to alert the player by appending messages to the main window
-  $("#mainScreen").append("<span style='color: " + msgColor + "'>\
-  **** " + msgText + " ****</span><br />");
+  let status = document.getElementById('addonStatusText');
+  status.style = "color:" + msgColor
+  status.innerHTML = msgText;
 }
 
 function removeSpaces(str) {
@@ -752,6 +785,16 @@ function reloadSelectors() {
 
 }
 
+function combatEnd() {
+  inCombat = false;
+  combatEndTime = Date.now();
+}
+
+function combatStart() {
+  lastSwingTime = Date.now();
+  inCombat = true;
+}
+
 /*****************************************************************************\
 | Event handling code                                                         |
 \*****************************************************************************/
@@ -773,14 +816,14 @@ function reloadSelectors() {
 let wm_moveToAttack = window.attack;
 window.attack = function(actionData) {
   wm_moveToAttack(actionData);
-  inCombat = true;
+  combatStart();
 }
 
-//Combat ended, set combat flag to false
-let wm_combatBreak = window.breakCombat;
-window.breakCombat = function(actionData) {
-  wm_combatBreak(actionData);
-  inCombat = false;
+//Exp earned, set combat flag to false
+let wm_gainExperience = window.gainExperience;
+window.gainExperience = function(actionData) {
+  wm_gainExperience(actionData);
+  combatEnd();
 }
 
 //Move started, set move flag to true
@@ -802,7 +845,9 @@ window.showRoom = function(actionData) {
 let wm_combatSwing = window.combatSwing;
 window.combatSwing = function(actionData) {
   wm_combatSwing(actionData);
-  lastSwingTime = Date.now();
+  if (actionData.AttackerID === playerID) {
+    lastSwingTime = Date.now();
+  }
 }
 
 //Deal with AI commands
@@ -825,7 +870,7 @@ window.aiCommand = function(actionData) {
 let wm_partyMessage = window.partyMessage;
 window.partyMessage = function(actionData) {
   wm_partyMessage(actionData);
-  let slicedMessage = actionData.slice(1,8);
+  let slicedMessage = actionData.MessageText.slice(0,8);
   if (slicedMessage === 'Running!') {
     aiRunning = true;
   }
