@@ -4,98 +4,96 @@
 'use strict';
 
 //Add some elements so the user can select paths and options
-$("<div id='pathUse' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-<p>Pathing and Looping</p>\
-<p>Select a path and choose Walk, Run, or Loop<br/>\
-Group:&nbsp<select id='groupSelect' onchange=\"groupSelected('groupSelect','custPathSelect')\" style='width:225px;'></select>\
-<br />Path:&nbsp&nbsp&nbsp<select id='custPathSelect' style='width:225px;'></select>\
-</p>\
-<p><button class='btn btn-default' onclick=\"lookupPathAndMove('custPathSelect','stepDelay',false,false)\">Walk</button>\
-<button class='btn btn-default' onclick=\"lookupPathAndMove('custPathSelect','stepDelay',true,false)\">Run</button>\
-<button class='btn btn-default' onclick=\"lookupPathAndMove('custPathSelect','stepDelay',false,true)\">Loop</button>\
-</p>\
-<p>Stop path/loop: \
-<button class='btn btn-default' onclick=\"stopWalking('now')\">Now!</button>\
-<button class='btn btn-default' onclick=\"stopWalking('end of loop')\">End Of Loop</button>\
-</p>\
-<p>Fine tune step delay (ms): <input type='number' id='stepDelay' name = 'stepDelay' min='1' value='2500' style='width:60px;'/>\
-</p>\
+$("<div id='pathAndLoop' class='panel col-xs-12 col-lg-8' style='padding:10px;float:left;margin-bottom:10px'>\
+  <p>Pathing and Looping</p>\
+  <p>Select a starting and ending room then choose Walk or Run</p>\
+  <div id='roomSelect' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
+    <p>Starting Room / Loop</p>\
+    Group: <select id='startGroupSelect' onchange=\"groupSelected('startGroupSelect','startPathSelect')\" style='width:225px;'></select>\
+    <br />Room: <select id='startPathSelect' onchange='displayPath()' style='width:225px;'></select>\
+    <br /><br /><p>Ending Room (n/a for loops)</p>\
+    Group: <select id='endGroupSelect' onchange=\"groupSelected('endGroupSelect','endPathSelect')\" style='width:225px;'></select>\
+    <br />Room: <select id='endPathSelect' onchange='displayPath()' style='width:225px;'></select>\
+  </div>\
+  <div id='pathControls' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
+    <button class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,false)\">Walk</button>\
+    <button class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',true,false)\">Run</button>\
+    <button class='btn btn-default' onclick=\"stopWalking('now')\">STOP!</button>\
+    <br />\
+    <button class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,true)\">Loop</button>\
+    <button class='btn btn-default' onclick=\"stopWalking('end of loop')\">End Loop</button>\
+    <br />Fine tune step delay (ms):\
+    <input type='number' id='stepDelay' name = 'stepDelay' min='1' value='2500' style='width:60px;'/>\
+  </div>\
+  <div id='autoCommands' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
+    <p>Auto Commands</p>\
+    <p>Enter a command and frequency below. Seperate multiple commands with a comma. Toggle sending on/off with the checkbox.</p>\
+    <p>Send auto commands:\
+      <input type='checkbox' id='sendAutoCmds' onchange=\"autoCmdCheck('autoCmd','autoCmdDelay','sendAutoCmds')\")/>\
+    </p>\
+    <p>Command(s):\
+      <input type='text' id='autoCmd' style='width:150px' value='' />\
+    </p>\
+    <p>Delay (sec):\
+      <input type='number' id='autoCmdDelay' name = 'autoCmdDelay' min='1' value='6' style='width:50px;'/>\
+    </p>\
+  </div>\
 </div>\
-<div id='autoCommands' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-<p>Auto Commands</p>\
-<p>Enter a command and frequency below. Whatever you put in the box will be sent. \
-If you want to do multiple commands, seperate them with a comma. Sending \
-commands is toggled with the checkbox (on/off).\
-</p>\
-<p>Send auto commands: \
-<input type='checkbox' id='sendAutoCmds' onchange=\"autoCmdCheck('autoCmd','autoCmdDelay','sendAutoCmds')\")/>\
-</p>\
-<p>Command(s):  \
-<input type='text' id='autoCmd' style='width:150px' value='' />\
-</p>\
-<p>Delay (seconds): \
-<input type='number' id='autoCmdDelay' name = 'autoCmdDelay' min='1' value='6' style='width:50px;'/>\
-</p>\
-</div>\
-<div id='pathCreate' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-<p>Path and Loop Creation</p>\
-<p>Create a new path/loop by filling in the boxes below.\
-An example is provided in the boxes. Spaces will be removed.\
-</p>\
-<p>Starting room / Loop name: \
-<input type='text' id='startingRoom' style='width:150px;' value='WF_Center' />\
-</p>\
-<p>Ending room (n/a for loops): \
-<input type='text' id='endingRoom' style='width:150px;' value='PF_Gatehouse' />\
-</p>\
-<p>Enter the steps for the path below, seperated by commas (n,s,e,w,ne,se,sw,nw,u,d):\
-<br /><input type='text' id='newPath' style='width:400px;' value='n,s,e,w,ne,se,sw,nw,u,d' />\
-</p>\
-<p><button class='btn btn-default' onclick=\"newPath('CustomPaths_','path')\">Save Path</button>\
-<button class='btn btn-default' onclick=\"newPath('CustomPaths_','loop')\">Save Loop</button>\
-</p>\
-</div>\
-<div id='pathTools' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-<p>Path Utilities</p>\
-<p>Delete the currently selected path (at the top):\
-<br /><button class='btn btn-default' onclick=\"deleteSelectedPath('CustomPaths_','custPathSelect','pathGroups_')\">Delete Path</button>\
-</p>\
-<br /><br />\
-<p>Path, loop, and group import/export:</p>\
-<p>The following buttons and box will let you do a mass path/group import and export. \
-Special formatting is required for import so be careful when using \
-this ability and only paste paths from a known good source.  Once the paths \
-are pasted into the box, click Import.\
-</p>\
-<br />\
-<button class='btn btn-default' onclick=\"getPathsToImport('CustomPaths_', 'pathGroups_')\">Import</button>\
-<button class='btn btn-default' onclick=\"exportPaths('CustomPaths_', 'pathGroups_')\">Export</button>\
-&nbsp&nbsp&nbsp&nbsp&nbsp\
-<button class='btn btn-default' onclick=\"clearAllPaths('CustomPaths_','pathGroups_')\">Clear All Paths</button>\
-</p>\
-<p><textarea id='pathImportExport' rows='4' cols='50'></textarea>\
-</p>\
-</div>\
-<div id='pathTools' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-<p>Path grouping</p>\
-<p>Select a group from the dropdown box and add/remove paths.\
-</p>\
-<p>Select Group:&nbsp&nbsp\
-<select id='groupingGroupSelect' onchange=\"groupSelected('groupingGroupSelect','groupingCurPathSelect')\" style='width:225px;'></select>\
-</p>\
-<p>Current paths:&nbsp\
-<select id='groupingCurPathSelect' style='width:225px;'></select>\
-</p>\
-<p>All Paths:&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp\
-<select id='groupingAllPathSelect' style='width:225px;'></select>\
-</p>\
-<p>\
-<button class='btn btn-default' onclick=\"editGroup('add')\">Add Path</button>\
-<button class='btn btn-default' onclick=\"editGroup('remove')\">Remove Path</button>\
-</p>\
-<p><button class='btn btn-default' onclick=\"editGroup('new')\">New Group</button>\
-<button class='btn btn-default' onclick=\"editGroup('delete')\">Delete Group</button>\
-</p>\
+<div id='Path Management' class='panel col-xs-12 col-lg-8' style='padding:10px;float:left;margin-bottom:10px'>\
+  <div id='pathCreate' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
+    <p>Path and Loop Creation</p>\
+    <p>Create a new path/loop by filling in the boxes below. Spaces will be removed.</p>\
+    <p>Starting room / Loop name:\
+      <input type='text' id='startingRoom' style='width:150px;' value='Start_Room_Name' />\
+    </p>\
+    <p>Ending room (n/a for loops):\
+      <input type='text' id='endingRoom' style='width:150px;' value='End_Room_Name' />\
+    </p>\
+    <p>Enter the steps for the path below, seperated by commas (n,s,e,w,ne,se,sw,nw,u,d):\
+      <br /><textarea id='newPath' rows='5' cols='40'></textarea>\
+    </p>\
+    <p>\
+      <button class='btn btn-default' onclick=\"newPath('CustomPaths_','path')\">Save Path</button>\
+      <button class='btn btn-default' onclick=\"newPath('CustomPaths_','loop')\">Save Loop</button>\
+    </p>\
+  </div>\
+  <div id='pathGrouping' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
+    <p>Path grouping</p>\
+    <p>Select a group from the dropdown box and add/remove paths. Note, paths are grouped based on the starting room.</p>\
+    <p>Select Group:&nbsp&nbsp\
+      <select id='groupingGroupSelect' onchange=\"groupSelected('groupingGroupSelect','groupingCurPathSelect')\" style='width:225px;'></select>\
+    </p>\
+    <p>Current paths:&nbsp\
+      <select id='groupingCurPathSelect' style='width:225px;'></select>\
+    </p>\
+    <p>All Paths:&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp\
+      <select id='groupingAllPathSelect' style='width:225px;'></select>\
+    </p>\
+    <p>\
+      <button class='btn btn-default' onclick=\"editGroup('new')\">New Group</button>\
+      <button class='btn btn-default' onclick=\"editGroup('add')\">Add Path</button>\
+      <button class='btn btn-default' onclick=\"editGroup('remove')\">Remove Path</button>\
+    </p>\
+    <p>\
+      <button class='btn btn-default' onclick=\"editGroup('delete')\">Delete Group</button>\
+      <button class='btn btn-default' onclick=\"deleteSelectedPath('CustomPaths_','groupingAllPathSelect','pathGroups_')\">Delete Path</button>\
+    </p>\
+  </div>\
+  <div id='pathTools' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
+    <p>Path, loop, and group import/export:</p>\
+    <p>\
+      The following buttons and box will let you do a mass path/group import and export.\
+      Special formatting is required for import so be careful when using\
+      this ability and only paste paths from a known good source.  Once the paths\
+      are pasted into the box, click Import.\
+    </p>\
+    <br />\
+    <button class='btn btn-default' onclick=\"getPathsToImport('CustomPaths_', 'pathGroups_')\">Import</button>\
+    <button class='btn btn-default' onclick=\"exportPaths('CustomPaths_', 'pathGroups_')\">Export</button>\
+    &nbsp&nbsp&nbsp&nbsp&nbsp\
+    <button class='btn btn-default' onclick=\"clearAllPaths('CustomPaths_','pathGroups_')\">Clear All Paths</button>\
+    <p><textarea id='pathImportExport' rows='5' cols='40'></textarea></p>\
+  </div>\
 </div>\
 ").insertAfter("#divExpTimer");
 
@@ -104,8 +102,10 @@ $("<div id='addonStatus'>\
 </div>").insertAfter("#mainScreen");
 
 //Constants used across many functions
-const PATH_SELECT_ID = 'custPathSelect';
-const GROUP_SELECT_ID = 'groupSelect';
+const START_PATH_SELECT_ID = 'startPathSelect';
+const END_PATH_SELECT_ID = 'endPathSelect'
+const START_GROUP_SELECT_ID = 'startGroupSelect';
+const END_GROUP_SELECT_ID = 'endGroupSelect'
 const PATH_LIST = 'CustomPaths_';
 const GROUP_LIST = 'pathGroups_';
 
@@ -126,55 +126,42 @@ loadPlayer();
 | Path walking / looping code                                                 |
 \*****************************************************************************/
 
-function loadPaths(pathList, pathSelectId) {
-  let custPaths = localStorage.getItem(pathList);
-  let custPathsArray = custPaths.split(',');
-  let custPathSelector = document.getElementById(pathSelectId);
-
-  //Sort the array before populating the list
-  custPathsArray.sort();
-
-  //Clear the box
-  custPathSelector.options.length = 0;
-
-  //Populate the list from the array
-  custPathsArray.forEach(function(path) {
-    if (path !== '') {
-      let opt = document.createElement('option');
-      opt.textContent = path;
-      opt.value = path;
-      custPathSelector.add(opt);
-    }
-  });
-}
-
-function groupSelected(groupSelectId, pathSelectId) {
-  let group = document.getElementById(groupSelectId).value;
-  loadPaths(group, pathSelectId);
-}
-
-function lookupPathAndMove(pathSelectId, delaySelectId, runPath, loopPath) {
-  let selectedPath = document.getElementById(pathSelectId).value;
-  let path = localStorage.getItem(selectedPath);
+function lookupPathAndMove(startSelectId, endSelectId, delaySelectId, runPath, loopPath) {
+  let start = document.getElementById(startSelectId).value;
+  let end = document.getElementById(endSelectId).value;
   let stepDelay = document.getElementById(delaySelectId).value;
 
-  //If the user wants to loop, set the loop value to true
+  //make sure the stopWalkingFlag is blank to start
   stopWalkingFlag = '';
 
-  //if the player want to run (no combat), disable AI combat
-  if (runPath) {
-    sendMessageDirect('DisableAI Combat');
-    document.getElementById('chkAICombat').checked = false;
-  }
-
-  //start the path
-  walkPath(path, stepDelay, loopPath, selectedPath);
-
-  //alert the player that the path/loop as started
   if (loopPath) {
-    notifyPlayer('greenyellow', 'Looping ' + selectedPath);
+    let path = localStorage.getItem(start);
+    //start the path
+    walkPath(path, stepDelay, loopPath, start);
+    //tell the player
+    notifyPlayer('greenyellow', 'Looping of ' + start + ' started.');
+
   } else {
-    notifyPlayer('greenyellow', 'Walking path: ' + selectedPath);
+    //for not loops, find the shortest path and build the step string
+    let path = findPath(start, end);
+
+    if (path) {
+      let steps = buildPath(path);
+
+      //if the player want to run (no combat), disable AI combat
+      if (runPath) {
+        sendMessageDirect('DisableAI Combat');
+        document.getElementById('chkAICombat').checked = false;
+      }
+
+      //start the path
+      walkPath(steps, stepDelay, loopPath, start);
+      //tell the player
+      notifyPlayer('greenyellow', 'Walking path: ' + path.replace(',', ' => '));
+    } else {
+      let displayString = 'ERROR: No path found between ' + start + ' and ' + end;
+      document.alert(displayString);
+    }
   }
 }
 
@@ -552,7 +539,7 @@ function startAutoCmds(cmdBox, cmdDelay) {
 
 
 /*****************************************************************************\
-| Path grouping and chaining code                                             |
+| Path grouping code                                                          |
 \*****************************************************************************/
 
 function editGroup(editType) {
@@ -701,7 +688,7 @@ function saveGroup() {
     storePath(GROUP_LIST, custPaths);
 
     //reload the group and paths dropdown
-    loadPaths(PATH_LIST, GROUP_SELECT_ID);
+    reloadSelectors();
 
     //clear the boxes for the next path
     document.getElementById('pathTextArea').value = '';
@@ -711,6 +698,123 @@ function saveGroup() {
     notifyPlayer('green','New path group/chain added');
   }
 }
+
+
+/*****************************************************************************\
+| Pathfinding Code                                                            |
+| Note: uses code in the other authors section for Dijkstra algorithm         |
+\*****************************************************************************/
+
+function displayPath() {
+  let start = document.getElementById(START_PATH_SELECT_ID).value;
+  let end = document.getElementById(END_PATH_SELECT_ID).value;
+
+  let pathString = findPath(start, end);
+
+  if (pathString) {
+    let pathArray = pathString.split(',');
+    let steps = 0;
+    let displayString = '';
+
+    pathArray.forEach(function(path) {
+      let pathSteps = localStorage.getItem(path).split(',');
+      steps += pathSteps.length;
+      displayString += ' => ' + path;
+    });
+
+    displayString = 'Path found (' + steps +' steps): ' + displayString.slice(4);
+    notifyPlayer('green', displayString);
+  } else {
+    let displayString = 'No path found between ' + start + ' and ' + end;
+    notifyPlayer('yellow', displayString);
+  }
+}
+
+function buildPath(pathString) {
+  let pathArray = pathString.split(',');
+  let pathSteps = '';
+
+  pathArray.forEach(function(path) {
+    let steps = localStorage.getItem(path);
+    pathSteps += steps + ',';
+    //add a comma at the end to allow seperation with the next path
+  });
+
+  //clip the last comma off the string since there isn't another connection
+  pathSteps = pathSteps.slice(0, -1);
+  return pathSteps;
+}
+
+function findPath(startRoom, endRoom) {
+  let pathMap = buildPathMap();
+  let graph = new Graph(pathMap);
+  let path = graph.findShortestPath(startRoom, endRoom);
+  let pathName = new Array();
+
+  if (path) {
+    //reconstruct the path names from start/ending rooms
+    for (let i = 0; i < (path.length - 1); i++) {
+      pathName.push(path[i] + '__2__' + path[i + 1]);
+    }
+    //return a comma seperated string of actual paths in the found path
+    return pathName.join(',');
+
+  } else {
+    //if no path could be found, return null
+    return null;
+  }
+}
+
+/*
+  function to build a path map of all existing paths that is passed to a
+  pathfinding function
+*/
+function buildPathMap() {
+  let pathArray = localStorage.getItem('CustomPaths_').split(',');
+  let connectGraph = new Object();
+  let startRoomArray = new Array();
+
+  //Get all starting rooms
+  pathArray.forEach(function(path) {
+    let rooms = path.split('__2__');
+    if (rooms[1]) {
+      startRoomArray.push(rooms[0]);
+    }
+  });
+  //pull a list of only unique starting rooms which are used as nodes
+  let uniqRooms = [...new Set(startRoomArray)];
+
+  //go through each of the unique rooms, find connecting nodes, and write to
+  //an object with the node as an object property then the connections and
+  //distance (in steps) as sub properties of the node
+  uniqRooms.forEach(function(room) {
+    //omit null rooms if they exist
+    if (room) {
+      let connections = new Object();
+      pathArray.forEach(function(path) {
+        //omit null paths if they exist
+        if (path) {
+          //split the path name into starting and ending room
+          let node = path.split('__2__');
+          //find the distance bettween the nodes by counting path steps
+          let distance = localStorage.getItem(path).split(',').length;
+          //omit loops by checking for null ending nodes
+          if (node[1]) {
+            if (room === node[0]) {
+              //write sub property to an object for later merging
+              connections[node[1]] = distance;
+            }
+          }
+        }
+      });
+      //merge in sub properties to the main node
+      connectGraph[room] = connections
+    }
+  });
+
+  return connectGraph;
+}
+
 
 /*****************************************************************************\
 | General functions                                                           |
@@ -755,34 +859,108 @@ function loadPlayer() {
 }
 
 function reloadSelectors() {
-  //Load paths into the main path/looping selectors
-  let curGroup = document.getElementById(GROUP_SELECT_ID).value;
+  //load start room
+  //load end room
+  //load grouping
 
-  //reload the group list
-  loadPaths(GROUP_LIST, GROUP_SELECT_ID);
+  //Save the current state of the group selectors
+  let curStartGroup = document.getElementById(START_GROUP_SELECT_ID).value;
+  let curEndGroup = document.getElementById(END_GROUP_SELECT_ID).value;
+  let curGroupingGroup = document.getElementById('groupingGroupSelect').value;
+
+  //reload the group selectors
+  let groupListArray = localStorage.getItem(GROUP_LIST).split(',');
+  loadSelector(groupListArray, START_GROUP_SELECT_ID);
+  loadSelector(groupListArray, END_GROUP_SELECT_ID);
+  loadSelector(groupListArray, 'groupingGroupSelect');
+
   //select previously selected group, if it exists
-  let groupExists = document.querySelector('#' + GROUP_SELECT_ID + ' [value="' + curGroup + '"]');
-  if (curGroup && groupExists) {
-    document.querySelector('#' + GROUP_SELECT_ID + ' [value="' + curGroup + '"]').selected = true;
-  }
+  selectIfExists(curStartGroup, START_GROUP_SELECT_ID);
+  selectIfExists(curEndGroup, END_GROUP_SELECT_ID);
+  selectIfExists(curGroupingGroup, 'groupingGroupSelect');
+
   //reload the path selector based on the group
-  loadPaths(document.getElementById(GROUP_SELECT_ID).value, PATH_SELECT_ID);
+  loadRooms(document.getElementById(START_GROUP_SELECT_ID).value, START_PATH_SELECT_ID, 'start');
+  loadRooms(document.getElementById(END_GROUP_SELECT_ID).value, END_PATH_SELECT_ID, 'end');
 
-
-  //Load paths into the grouping selectors
-  curGroup = document.getElementById('groupingGroupSelect').value;
-  //reload the group list
-  loadPaths(GROUP_LIST, 'groupingGroupSelect');
-  //select previously selected group, if it exists
-  groupExists = document.querySelector('#groupingGroupSelect [value="' + curGroup + '"]');
-  if (curGroup && groupExists) {
-    document.querySelector('#groupingGroupSelect [value="' + curGroup + '"]').selected = true;
-  }
   //reload the group path selector based on the selected group
-  loadPaths(document.getElementById('groupingGroupSelect').value, 'groupingCurPathSelect');
-  //reload the all_paths selector
-  loadPaths(PATH_LIST, 'groupingAllPathSelect');
+  curGroupingGroup = document.getElementById('groupingGroupSelect').value;
+  let pathArray = localStorage.getItem(curGroupingGroup).split(',');
+  loadSelector(pathArray, 'groupingCurPathSelect');
 
+  //reload the all_paths selector
+  pathArray = localStorage.getItem(PATH_LIST).split(',');
+  loadSelector(pathArray, 'groupingAllPathSelect');
+
+}
+
+function loadRooms(pathList, selectorId, type) {
+  let pathArray = localStorage.getItem(pathList).split(',');
+  let startRoomArray = new Array();
+  let endRoomArray = new Array();
+
+  pathArray.forEach(function(path) {
+    let rooms = path.split('__2__');
+    if (rooms[0]) {
+      startRoomArray.push(rooms[0]);
+    }
+    if (rooms[1]) {
+      endRoomArray.push(rooms[1]);
+    }
+  });
+
+  if (type === 'start') {
+    let uniqRooms = [...new Set(startRoomArray)];
+    loadSelector(uniqRooms, selectorId);
+  } else {
+    let uniqRooms = [...new Set(endRoomArray)];
+    loadSelector(uniqRooms, selectorId);
+  }
+}
+
+function loadSelector(optionArray, selectorId) {
+  let selectorToLoad = document.getElementById(selectorId);
+
+  //Sort the array before populating the list
+  optionArray.sort();
+
+  //Clear the current options
+  selectorToLoad.options.length = 0;
+
+  //Populate the list from the array
+  optionArray.forEach(function(item) {
+    if (item) {
+      let opt = document.createElement('option');
+      opt.textContent = item;
+      opt.value = item;
+      selectorToLoad.add(opt);
+    }
+  });
+}
+
+/*
+  This function is used by the selectors for the onchange event
+*/
+function groupSelected(groupSelectId, pathSelectId) {
+  //save currently selected paths
+  let curStartRoom = document.getElementById(START_PATH_SELECT_ID).value;
+  let curEndRoom = document.getElementById(END_PATH_SELECT_ID).value;
+  let curGroupingRoom = document.getElementById('groupingCurPathSelect').value;
+
+  //reload all of the selectors
+  reloadSelectors();
+
+  //reselect previously selected paths for all path selectors if it still exists
+  selectIfExists(curStartRoom, START_PATH_SELECT_ID);
+  selectIfExists(curEndRoom, END_PATH_SELECT_ID);
+  selectIfExists(curGroupingRoom, 'groupingCurPathSelect');
+}
+
+function selectIfExists(valToSel, selectorId) {
+  let exists = document.querySelector('#' + selectorId + ' [value="' + valToSel + '"]');
+  if (valToSel && exists) {
+    document.querySelector('#' + selectorId + ' [value="' + valToSel + '"]').selected = true;
+  }
 }
 
 function combatEnd() {
@@ -812,11 +990,43 @@ function combatStart() {
   otherwise the main webmud window won't show the message normally
 */
 
-//Combat started, set combat flag to true
+//Physical combat started, set combat flag to true
 let wm_moveToAttack = window.attack;
 window.attack = function(actionData) {
   wm_moveToAttack(actionData);
   combatStart();
+}
+
+//Spell combat started, set combat flag to true
+let wm_castSpell = window.castSpell;
+window.castSpell = function(actionData) {
+  wm_castSpell(actionData);
+  switch (actionData.Result) {
+    case -11:
+      //attempt to cast but fail
+      if (actionData.CasterID === playerID) {
+        lastSwingTime = Date.now();
+      }
+      return;
+    case 4:
+      //Player cast (good and bad)
+      if (actionData.CasterID === playerID && actionData.EvilInCombat) {
+        lastSwingTime = Date.now();
+      }
+      return;
+    case 7:
+      //single target move to cast
+      if (actionData.CasterID === playerID) {
+        combatStart();
+      }
+      return;
+    case 8:
+      //room move to cast
+      if (actionData.CasterID === playerID) {
+        combatStart();
+      }
+      return;
+  }
 }
 
 //Exp earned, set combat flag to false
@@ -884,6 +1094,184 @@ window.updateHPMA = function(actionData) {
     playerResting = false;
   }
 }
+
+
+
+
+
+
+//The following MIT license and credits apply to the Graph class, which is an
+//implementation of the Dijkstra algorithm.  Code was obtained from github on
+//2016-03-21 at https://github.com/andrewhayward/dijkstra
+/*
+The MIT License (MIT)
+
+Copyright (c) 2014 Andrew Hayward
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+var Graph = (function (undefined) {
+
+	var extractKeys = function (obj) {
+		var keys = [], key;
+		for (key in obj) {
+		    Object.prototype.hasOwnProperty.call(obj,key) && keys.push(key);
+		}
+		return keys;
+	}
+
+	var sorter = function (a, b) {
+		return parseFloat (a) - parseFloat (b);
+	}
+
+	var findPaths = function (map, start, end, infinity) {
+		infinity = infinity || Infinity;
+
+		var costs = {},
+		    open = {'0': [start]},
+		    predecessors = {},
+		    keys;
+
+		var addToOpen = function (cost, vertex) {
+			var key = "" + cost;
+			if (!open[key]) open[key] = [];
+			open[key].push(vertex);
+		}
+
+		costs[start] = 0;
+
+		while (open) {
+			if(!(keys = extractKeys(open)).length) break;
+
+			keys.sort(sorter);
+
+			var key = keys[0],
+			    bucket = open[key],
+			    node = bucket.shift(),
+			    currentCost = parseFloat(key),
+			    adjacentNodes = map[node] || {};
+
+			if (!bucket.length) delete open[key];
+
+			for (var vertex in adjacentNodes) {
+			    if (Object.prototype.hasOwnProperty.call(adjacentNodes, vertex)) {
+					var cost = adjacentNodes[vertex],
+					    totalCost = cost + currentCost,
+					    vertexCost = costs[vertex];
+
+					if ((vertexCost === undefined) || (vertexCost > totalCost)) {
+						costs[vertex] = totalCost;
+						addToOpen(totalCost, vertex);
+						predecessors[vertex] = node;
+					}
+				}
+			}
+		}
+
+		if (costs[end] === undefined) {
+			return null;
+		} else {
+			return predecessors;
+		}
+
+	}
+
+	var extractShortest = function (predecessors, end) {
+		var nodes = [],
+		    u = end;
+
+		while (u) {
+			nodes.push(u);
+			u = predecessors[u];
+		}
+
+		nodes.reverse();
+		return nodes;
+	}
+
+	var findShortestPath = function (map, nodes) {
+		var start = nodes.shift(),
+		    end,
+		    predecessors,
+		    path = [],
+		    shortest;
+
+		while (nodes.length) {
+			end = nodes.shift();
+			predecessors = findPaths(map, start, end);
+
+			if (predecessors) {
+				shortest = extractShortest(predecessors, end);
+				if (nodes.length) {
+					path.push.apply(path, shortest.slice(0, -1));
+				} else {
+					return path.concat(shortest);
+				}
+			} else {
+				return null;
+			}
+
+			start = end;
+		}
+	}
+
+	var toArray = function (list, offset) {
+		try {
+			return Array.prototype.slice.call(list, offset);
+		} catch (e) {
+			var a = [];
+			for (var i = offset || 0, l = list.length; i < l; ++i) {
+				a.push(list[i]);
+			}
+			return a;
+		}
+	}
+
+	var Graph = function (map) {
+		this.map = map;
+	}
+
+	Graph.prototype.findShortestPath = function (start, end) {
+		if (Object.prototype.toString.call(start) === '[object Array]') {
+			return findShortestPath(this.map, start);
+		} else if (arguments.length === 2) {
+			return findShortestPath(this.map, [start, end]);
+		} else {
+			return findShortestPath(this.map, toArray(arguments));
+		}
+	}
+
+	Graph.findShortestPath = function (map, start, end) {
+		if (Object.prototype.toString.call(start) === '[object Array]') {
+			return findShortestPath(map, start);
+		} else if (arguments.length === 3) {
+			return findShortestPath(map, [start, end]);
+		} else {
+			return findShortestPath(map, toArray(arguments, 1));
+		}
+	}
+
+	return Graph;
+
+})();
+
 
 /*****************************************************************************\
 | Jaeger's Combat Stats Watcher                                               |
