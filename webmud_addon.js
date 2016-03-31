@@ -16,12 +16,12 @@ $("<div id='pathAndLoop' class='panel col-xs-12 col-lg-8' style='padding:10px;fl
     <br />Room: <select id='endPathSelect' onchange='displayPath()' style='width:225px;'></select>\
   </div>\
   <div id='pathControls' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-    <button class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,false)\">Walk</button>\
-    <button class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',true,false)\">Run</button>\
-    <button class='btn btn-default' onclick=\"stopWalking('now')\">STOP!</button>\
+    <button id='pathWalk' class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,false)\">Walk</button>\
+    <button id='pathRun'class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',true,false)\">Run</button>\
+    <button class='btn btn-danger' onclick=\"stopWalking('now')\">STOP!</button>\
     <br />\
-    <button class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,true)\">Loop</button>\
-    <button class='btn btn-default' onclick=\"stopWalking('end of loop')\">End Loop</button>\
+    <button id='pathLoop'class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,true)\">Loop</button>\
+    <button class='btn btn-danger' onclick=\"stopWalking('end of loop')\">End Loop</button>\
     <br />Fine tune step delay (ms):\
     <input type='number' id='stepDelay' name = 'stepDelay' min='1' value='2500' style='width:60px;'/>\
   </div>\
@@ -40,7 +40,7 @@ $("<div id='pathAndLoop' class='panel col-xs-12 col-lg-8' style='padding:10px;fl
   </div>\
 </div>\
 <div id='Path Management' class='panel col-xs-12 col-lg-8' style='padding:10px;float:left;margin-bottom:10px'>\
-  <div id='pathCreate' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
+  <div id='pathCreate' class='panel col-xs-12 col-lg-6' style='padding:10px;float:left;margin-bottom:10px'>\
     <p>Path and Loop Creation</p>\
     <p>Create a new path/loop by filling in the boxes below. Spaces will be removed.</p>\
     <p>Starting room / Loop name:\
@@ -55,19 +55,20 @@ $("<div id='pathAndLoop' class='panel col-xs-12 col-lg-8' style='padding:10px;fl
     <p>\
       <button class='btn btn-default' onclick=\"newPath('CustomPaths_','path')\">Save Path</button>\
       <button class='btn btn-default' onclick=\"newPath('CustomPaths_','loop')\">Save Loop</button>\
+      <button type='button' class='btn btn-success' style='float:right' data-toggle='modal' data-target='#importExportDialog'>Import/Export</button>\
     </p>\
   </div>\
-  <div id='pathGrouping' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
+  <div id='pathGrouping' class='panel col-xs-12 col-lg-6' style='padding:10px;float:left;margin-bottom:10px'>\
     <p>Path grouping</p>\
     <p>Select a group from the dropdown box and add/remove paths. Note, paths are grouped based on the starting room.</p>\
     <p>Select Group:&nbsp&nbsp\
-      <select id='groupingGroupSelect' onchange=\"groupSelected('groupingGroupSelect','groupingCurPathSelect')\" style='width:225px;'></select>\
+      <select id='groupingGroupSelect' class='groupSelect' onchange=\"groupSelected('groupingGroupSelect','groupingCurPathSelect')\" style='width:225px;'></select>\
     </p>\
     <p>Current paths:&nbsp\
       <select id='groupingCurPathSelect' style='width:225px;'></select>\
     </p>\
     <p>All Paths:&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp\
-      <select id='groupingAllPathSelect' style='width:225px;'></select>\
+      <select id='groupingAllPathSelect' class='pathSelect' style='width:225px;'></select>\
     </p>\
     <p>\
       <button class='btn btn-default' onclick=\"editGroup('new')\">New Group</button>\
@@ -79,27 +80,45 @@ $("<div id='pathAndLoop' class='panel col-xs-12 col-lg-8' style='padding:10px;fl
       <button class='btn btn-default' onclick=\"deleteSelectedPath('CustomPaths_','groupingAllPathSelect','pathGroups_')\">Delete Path</button>\
     </p>\
   </div>\
-  <div id='pathTools' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-    <p>Path, loop, and group import/export:</p>\
-    <p>\
-      The following buttons and box will let you do a mass path/group import and export.\
-      Special formatting is required for import so be careful when using\
-      this ability and only paste paths from a known good source.  Once the paths\
-      are pasted into the box, click Import.\
-    </p>\
-    <br />\
-    <button class='btn btn-default' onclick=\"getPathsToImport('CustomPaths_', 'pathGroups_')\">Import</button>\
-    <button class='btn btn-default' onclick=\"exportPaths('CustomPaths_', 'pathGroups_')\">Export</button>\
-    &nbsp&nbsp&nbsp&nbsp&nbsp\
-    <button class='btn btn-default' onclick=\"clearAllPaths('CustomPaths_','pathGroups_')\">Clear All Paths</button>\
-    <p><textarea id='pathImportExport' rows='5' cols='40'></textarea></p>\
-  </div>\
 </div>\
 ").insertAfter("#divExpTimer");
 
+//Div for addon status
 $("<div id='addonStatus'>\
 <p>Addon Status: <label id=\"addonStatusText\"></label></p>\
 </div>").insertAfter("#mainScreen");
+
+//Modal dialog for path import/export
+$("<div id='importExportDialog' class='modal fade' tabindex='-1' role='dialog' aria-labelledby='pathImportExport'>\
+  <div class='modal-dialog'>\
+    <div class='modal-content'>\
+      <div class='modal-header'>\
+        <button type='button' class='close' data-dismiss='modal' aria-label='Close'><span aria-hidden='true'>&times;</span></button>\
+        <h4 class='modal-title'>Path Import and Export Tools</h4>\
+      </div>\
+      <div class='modal-body'>\
+        <p style='font-size:12px'>The following buttons and box will let you import and export paths. Special formatting is required for import so be careful when using this ability and only paste paths from a known good source.  To import, paste a single, group, or mass path list into the box and click Import. For export, use the single, group, or all buttons. Single will export only the currently selected path, Group will export all paths in the selected group, and All will export all paths/groups.</p>\
+        Group: <select id='exportGroupSelect' class='groupSelect'></select><br />\
+        Path: <select id='exportPathSelect' class='pathSelect'></select><br />\
+        <textarea id='pathImportExport' rows='5' cols='70' style='max-width:550px'></textarea>\
+      </div>\
+      <div class='modal-footer'>\
+        <div style='margin:0 auto'>\
+          <button type='button' id='importPath' class='btn btn-success' data-dismiss='modal' style='float:left'>Import</button>\
+        </div>\
+        <div style='margin:0 auto; width:40%'>\
+          <button type='button' id='exportSingle' class='btn btn-primary' style='float:left'>Single</button>\
+          <button type='button' id='exportGroup' class='btn btn-primary' style='float:left'>Group</button>\
+          <button type='button' id='exportAll' class='btn btn-primary' style='float:left'>All</button>\
+        </div>\
+        <div style='margin:0 auto'>\
+          <button type'button' id='clearAllPaths' class='btn btn-danger'>Clear All Paths</button>\
+          <button type='button' class='btn btn-danger' data-dismiss='modal'>Close</button>\
+        </div>\
+      </div>\
+    </div>\
+  </div>\
+</div>").insertAfter("#divCharacterSetup")
 
 //Constants used across many functions
 const START_PATH_SELECT_ID = 'startPathSelect';
@@ -118,9 +137,157 @@ let stopWalkingFlag = '';
 let sendAutoCmds = false;
 let lastSwingTime = Date.now();
 let combatEndTime = Date.now();
+let curPlayer;
 
-//Call loading script
-loadPlayer();
+
+/*****************************************************************************\
+| Classes                                                                     |
+\*****************************************************************************/
+
+class Player {
+  constructor(id, friends, settings) {
+    this._id = id;
+
+    if (friends) {
+      this._friends = friends;
+    } else {
+      this._friends = new Array();
+    }
+
+    this._settings = {
+      'curPaths':{'startGroup':'_All_Paths', 'endGroup':'_All_Paths',
+                  'startPath':'', 'endPath':''},
+      'stepDelay':2500,
+      'autoCmds':{'commands':'', 'delay':6, 'enabled':false}
+    };
+
+    if (settings) {
+      if (settings.curPaths) {
+        this._settings.curPaths = settings.curPaths;
+      }
+
+      if (settings.stepDelay) {
+        this._settings.stepDelay = settings.stepDelay;
+      }
+
+      if (settings.autoCmds) {
+        this._settings.autoCmds = settings.autoCmds;
+      }
+    }
+  }
+
+  savePlayer() {
+    localStorage.setItem(this._id, JSON.stringify(this));
+  }
+
+  addFriend(friend) {
+    this._friends.push(friend);
+
+    this.savePlayer();
+  }
+
+  removeFriend(enemy) {
+    let i = this._friends.length;
+    while (i--) {
+      if (this._friends[i] === enemy) {
+        this._friends.splice(i,1);
+      }
+    }
+  }
+
+  isFriend(name) {
+    if (this._friends.indexOf(name) !== -1) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  updateSettings() {
+    //selected paths
+    this._settings.curPaths.startGroup = document.getElementById(START_GROUP_SELECT_ID).value;
+    this._settings.curPaths.endGroup = document.getElementById(END_GROUP_SELECT_ID).value;
+    this._settings.curPaths.startPath = document.getElementById(START_PATH_SELECT_ID).value;
+    this._settings.curPaths.endPath = document.getElementById(END_PATH_SELECT_ID).value;
+
+    //step delay
+    this._settings.stepDelay = document.getElementById('stepDelay').value;
+
+    //auto command settings
+    this._settings.autoCmds.commands = document.getElementById('autoCmd').value;
+    this._settings.autoCmds.delay = document.getElementById('autoCmdDelay').value;
+    this._settings.autoCmds.enabled = document.getElementById('sendAutoCmds').checked;
+
+    this.savePlayer();
+  }
+
+  loadSettings() {
+    //selected groups
+    selectIfExists(this._settings.curPaths.startGroup, START_GROUP_SELECT_ID);
+    selectIfExists(this._settings.curPaths.endGroup, END_GROUP_SELECT_ID);
+    //reload selectors after selecting grops so paths are available
+    reloadSelectors();
+    //selected paths
+    selectIfExists(this._settings.curPaths.startPath, START_PATH_SELECT_ID);
+    selectIfExists(this._settings.curPaths.endPath, END_PATH_SELECT_ID);
+
+    //step delay
+    document.getElementById('stepDelay').value = this._settings.stepDelay;
+
+    //auto commands
+    document.getElementById('autoCmd').value = this._settings.autoCmds.commands;
+    document.getElementById('autoCmdDelay').value = this._settings.autoCmds.delay;
+    document.getElementById('sendAutoCmds').checked = this._settings.autoCmds.enabled;
+  }
+}
+
+
+/*****************************************************************************\
+| Initialization code (self invoked)                                          |
+\*****************************************************************************/
+
+(function() {
+  //used to load all of the initial data stored in localStorage
+  let custPaths = localStorage.getItem(PATH_LIST);
+  let groupList = localStorage.getItem(GROUP_LIST);
+
+  //Save a starter path list if none currently exists
+  if (custPaths === null) {
+    storePath(PATH_LIST,'');
+    custPaths = localStorage.getItem(PATH_LIST);
+  }
+  //Save a starter group list if none currently exists
+  if (groupList === null) {
+    storePath(GROUP_LIST,'_All_Paths');
+  }
+
+  //Overwrite the _All_Paths group with the current list of all paths
+  //from localStorage.
+  storePath('_All_Paths',custPaths);
+
+  //load the selectors
+  reloadSelectors();
+
+  //create the player object
+  let storedPlayer = JSON.parse(localStorage.getItem(playerID));
+
+  if (storedPlayer) {
+    curPlayer = new Player(playerID, storedPlayer._friends, storedPlayer._settings);
+  } else {
+    curPlayer = new Player(playerID);
+  }
+
+  //load the player's saved settings
+  curPlayer.loadSettings();
+
+  //start or stop auto commands after loading preferences
+  autoCmdCheck('autoCmd','autoCmdDelay','sendAutoCmds');
+
+  //alert the player that the addon loaded successfully
+  notifyPlayer('yellow','WebMUD addon successfully loaded');
+
+})();
+
 
 /*****************************************************************************\
 | Path walking / looping code                                                 |
@@ -140,6 +307,8 @@ function lookupPathAndMove(startSelectId, endSelectId, delaySelectId, runPath, l
     walkPath(path, stepDelay, loopPath, start);
     //tell the player
     notifyPlayer('greenyellow', 'Looping of ' + start + ' started.');
+    //disable movement buttons to prevent multiple clicks
+    toggleMoveButtons(false);
 
   } else {
     //for not loops, find the shortest path and build the step string
@@ -157,12 +326,21 @@ function lookupPathAndMove(startSelectId, endSelectId, delaySelectId, runPath, l
       //start the path
       walkPath(steps, stepDelay, loopPath, start);
       //tell the player
-      notifyPlayer('greenyellow', 'Walking path: ' + path.replace(',', ' => '));
+      notifyPlayer('greenyellow', 'Walking path: ' + path.split(',').join(' => '));
+      //disable movement buttons to prevent multiple clicks
+      toggleMoveButtons(false);
+
+      //reverse the selected start/end group and path for quality of life
+      switchPathSelection();
+
     } else {
       let displayString = 'ERROR: No path found between ' + start + ' and ' + end;
       document.alert(displayString);
     }
   }
+
+  //save the player's current settings
+  curPlayer.updateSettings();
 }
 
 function walkPath(path, stepDelay, loopPath, selectedPath) {
@@ -184,6 +362,8 @@ function walkPath(path, stepDelay, loopPath, selectedPath) {
       if (val.done || stopWalkingFlag === 'now') {
         //stop the timed interval since the path is done
         clearInterval(interval);
+        //enable the movement buttons
+        toggleMoveButtons(true);
 
         //Determine the reason or stopping and notify the player
         if (loopPath && stopWalkingFlag === '') {
@@ -241,6 +421,23 @@ function* genFunc(passedArr) {
 
 function stopWalking(whenToStop) {
   stopWalkingFlag = whenToStop;
+}
+
+function switchPathSelection() {
+  let curStartGroup = document.getElementById(START_GROUP_SELECT_ID).value;
+  let curEndGroup = document.getElementById(END_GROUP_SELECT_ID).value;
+  let curStartRoom = document.getElementById(START_PATH_SELECT_ID).value;
+  let curEndRoom = document.getElementById(END_PATH_SELECT_ID).value;
+
+  //swap the groups start <> end
+  selectIfExists(curStartGroup, END_GROUP_SELECT_ID);
+  selectIfExists(curEndGroup, START_GROUP_SELECT_ID);
+  //reload selectors so paths are available
+  reloadSelectors();
+  //swap the paths start <> end
+  selectIfExists(curStartRoom, END_PATH_SELECT_ID);
+  selectIfExists(curEndRoom, START_PATH_SELECT_ID);
+
 }
 
 /*****************************************************************************\
@@ -400,26 +597,49 @@ function importPaths(pathList, groupList, pathsToImport) {
   notifyPlayer('greenyellow','Path import complete');
 }
 
-function exportPaths(pathList, groupList) {
-  let currentPaths = localStorage.getItem(pathList);
-  let currentPathsArray = currentPaths.split(',');
-  let currentGroups = localStorage.getItem(groupList);
-  let currentGroupsArray = currentGroups.split(',');
+function exportPaths(pathList, groupList, exportType) {
   let pathsToExport = new Array();
   let exportString = '';
 
-  currentPathsArray.forEach(function(path) {
+  if (exportType === 'single') {
+    let path = document.getElementById('exportPathSelect').value;
     let pathSteps = localStorage.getItem(path);
     pathsToExport.push(path + ':' + pathSteps);
-  });
 
-  //add indicator for the start of groups
-  pathsToExport.push('__STARTING_GROUPS__');
+  } else {
 
-  currentGroupsArray.forEach(function(group) {
-    let groupPaths = localStorage.getItem(group);
-    pathsToExport.push(group + ':' + groupPaths);
-  });
+    let currentGroups = '';
+    let currentPaths = '';
+    let currentGroupsArray = new Array();
+    let currentPathsArray = new Array();
+
+
+    if (exportType === 'group') {
+      currentGroups = document.getElementById('exportGroupSelect').value;
+      currentGroupsArray = currentGroups.split(',');
+      currentPaths = localStorage.getItem(currentGroups);
+      currentPathsArray = currentPaths.split(',');
+
+    } else if (exportType === 'all') {
+      currentPaths = localStorage.getItem(pathList);
+      currentPathsArray = currentPaths.split(',');
+      currentGroups = localStorage.getItem(groupList);
+      currentGroupsArray = currentGroups.split(',');
+    }
+
+    currentPathsArray.forEach(function(path) {
+      let pathSteps = localStorage.getItem(path);
+      pathsToExport.push(path + ':' + pathSteps);
+    });
+
+    //add indicator for the start of groups
+    pathsToExport.push('__STARTING_GROUPS__');
+
+    currentGroupsArray.forEach(function(group) {
+      let groupPaths = localStorage.getItem(group);
+      pathsToExport.push(group + ':' + groupPaths);
+    });
+  }
 
   //Join the array back together into a string for export
   exportString = pathsToExport.join(';');
@@ -509,23 +729,27 @@ function reversePath(dir) {
 function autoCmdCheck(cmdBox, delayId, cmdCheckBox) {
   //When the user clicks the auto commands checkbox, check to see if it's
   //checked or unchecked and set the appropriate flag
+  let cmdDelay = document.getElementById(delayId).value;
+  let commands = document.getElementById(cmdBox).value;
+
   if (document.getElementById(cmdCheckBox).checked) {
-    let cmdDelay = document.getElementById(delayId).value;
-    cmdDelay = cmdDelay * 1000;
     sendAutoCmds = true;
-    startAutoCmds(cmdBox, cmdDelay);
+    startAutoCmds(commands, cmdDelay * 1000);
+
   } else {
     sendAutoCmds = false;
+
   }
+
+  //update the player with new commands
+  curPlayer.updateSettings();
 }
 
-function startAutoCmds(cmdBox, cmdDelay) {
-  notifyPlayer('yellow','Auto Commands Started');
+function startAutoCmds(commands, cmdDelay) {
+  let commandArray = commands.split(',');
+
   let interval = setInterval(() => {
     if (sendAutoCmds) {
-      let commands = document.getElementById(cmdBox).value;
-      let commandArray = commands.split(',');
-
       commandArray.forEach(function(cmd) {
         sendMessageDirect(cmd);
       });
@@ -535,6 +759,9 @@ function startAutoCmds(cmdBox, cmdDelay) {
       notifyPlayer('yellow','Auto Commands Stopped');
     }
   }, cmdDelay);
+
+  //tell the player commands started
+  notifyPlayer('yellow','Auto Commands Started');
 }
 
 
@@ -831,33 +1058,6 @@ function removeSpaces(str) {
   return str.replace(/\s+/g, '');
 }
 
-function loadPlayer() {
-  //used to load all of the initial data stored in localStorage
-  let custPaths = localStorage.getItem(PATH_LIST);
-  let groupList = localStorage.getItem(GROUP_LIST);
-
-  //Save a starter path list if none currently exists
-  if (custPaths === null) {
-    storePath(PATH_LIST,'');
-    custPaths = localStorage.getItem(PATH_LIST);
-  }
-  //Save a starter group list if none currently exists
-  if (groupList === null) {
-    storePath(GROUP_LIST,'_All_Paths');
-  }
-
-  //Overwrite the _All_Paths group with the current list of all paths
-  //from localStorage.
-  storePath('_All_Paths',custPaths);
-
-  //load the selectors
-  reloadSelectors();
-
-  //alert the player that the addon loaded successfully
-  notifyPlayer('yellow','WebMUD addon successfully loaded');
-
-}
-
 function reloadSelectors() {
   //load start room
   //load end room
@@ -870,9 +1070,15 @@ function reloadSelectors() {
 
   //reload the group selectors
   let groupListArray = localStorage.getItem(GROUP_LIST).split(',');
-  loadSelector(groupListArray, START_GROUP_SELECT_ID);
-  loadSelector(groupListArray, END_GROUP_SELECT_ID);
-  loadSelector(groupListArray, 'groupingGroupSelect');
+
+  let selectorToLoad = document.getElementById(START_GROUP_SELECT_ID);
+  loadSelector(groupListArray, selectorToLoad);
+
+  selectorToLoad = document.getElementById(END_GROUP_SELECT_ID);
+  loadSelector(groupListArray, selectorToLoad);
+
+  selectorToLoad = document.getElementsByClassName('groupSelect');
+  loadSelector(groupListArray, selectorToLoad);
 
   //select previously selected group, if it exists
   selectIfExists(curStartGroup, START_GROUP_SELECT_ID);
@@ -886,11 +1092,14 @@ function reloadSelectors() {
   //reload the group path selector based on the selected group
   curGroupingGroup = document.getElementById('groupingGroupSelect').value;
   let pathArray = localStorage.getItem(curGroupingGroup).split(',');
-  loadSelector(pathArray, 'groupingCurPathSelect');
+
+  selectorToLoad = document.getElementById('groupingCurPathSelect');
+  loadSelector(pathArray, selectorToLoad);
 
   //reload the all_paths selector
   pathArray = localStorage.getItem(PATH_LIST).split(',');
-  loadSelector(pathArray, 'groupingAllPathSelect');
+  selectorToLoad = document.getElementsByClassName('pathSelect');
+  loadSelector(pathArray, selectorToLoad);
 
 }
 
@@ -898,6 +1107,7 @@ function loadRooms(pathList, selectorId, type) {
   let pathArray = localStorage.getItem(pathList).split(',');
   let startRoomArray = new Array();
   let endRoomArray = new Array();
+  let selectorToLoad = document.getElementById(selectorId);
 
   pathArray.forEach(function(path) {
     let rooms = path.split('__2__');
@@ -911,31 +1121,52 @@ function loadRooms(pathList, selectorId, type) {
 
   if (type === 'start') {
     let uniqRooms = [...new Set(startRoomArray)];
-    loadSelector(uniqRooms, selectorId);
+    loadSelector(uniqRooms, selectorToLoad);
   } else {
     let uniqRooms = [...new Set(endRoomArray)];
-    loadSelector(uniqRooms, selectorId);
+    loadSelector(uniqRooms, selectorToLoad);
   }
 }
 
-function loadSelector(optionArray, selectorId) {
-  let selectorToLoad = document.getElementById(selectorId);
-
+function loadSelector(optionArray, selectorToLoad) {
   //Sort the array before populating the list
   optionArray.sort();
 
-  //Clear the current options
-  selectorToLoad.options.length = 0;
+  let selectors = selectorToLoad.length;
 
-  //Populate the list from the array
-  optionArray.forEach(function(item) {
-    if (item) {
-      let opt = document.createElement('option');
-      opt.textContent = item;
-      opt.value = item;
-      selectorToLoad.add(opt);
-    }
-  });
+  if (!(selectorToLoad instanceof HTMLCollection)) {
+    //false: only one selector given, process as single
+
+    //Clear the current options
+    selectorToLoad.options.length = 0;
+
+    //Populate the list from the array
+    optionArray.forEach(function(item) {
+      if (item) {
+        let opt = document.createElement('option');
+        opt.textContent = item;
+        opt.value = item;
+        selectorToLoad.add(opt);
+      }
+    });
+
+  } else {
+    //true: collection given, process as multiple
+    for (let i = 0; i < selectors; i++) {
+      //Clear the current options
+      selectorToLoad[i].options.length = 0;
+
+      //Populate the list from the array
+      optionArray.forEach(function(item) {
+        if (item) {
+          let opt = document.createElement('option');
+          opt.textContent = item;
+          opt.value = item;
+          selectorToLoad[i].add(opt);
+        }
+      });
+    };
+  }
 }
 
 /*
@@ -971,6 +1202,23 @@ function combatEnd() {
 function combatStart() {
   lastSwingTime = Date.now();
   inCombat = true;
+}
+
+function toggleMoveButtons(turnOn) {
+  let walk = document.getElementById('pathWalk');
+  let run = document.getElementById('pathRun');
+  let loop = document.getElementById('pathLoop');
+  if (turnOn) {
+    //enable the buttons
+    walk.disabled = false;
+    run.disabled = false;
+    loop.disabled = false;
+  } else {
+    //disable the buttons
+    walk.disabled = true;
+    run.disabled = true;
+    loop.disabled = true;
+  }
 }
 
 /*****************************************************************************\
@@ -1095,7 +1343,107 @@ window.updateHPMA = function(actionData) {
   }
 }
 
+//event listener for the dialog modal
+document.getElementById('importExportDialog').addEventListener("click", function(e) {
+  switch (e.target.id) {
+    case 'importPath':
+      getPathsToImport('CustomPaths_', 'pathGroups_');
+      break;
 
+    case 'exportSingle':
+      exportPaths('CustomPaths_', 'pathGroups_', 'single');
+      break;
+
+    case 'exportGroup':
+      exportPaths('CustomPaths_', 'pathGroups_', 'group');
+      break;
+
+    case 'exportAll':
+      exportPaths('CustomPaths_', 'pathGroups_', 'all');
+      break;
+
+    case 'clearAllPaths':
+      clearAllPaths('CustomPaths_','pathGroups_')
+      break;
+
+    default:
+
+  }
+},false);
+
+//keypress events for numpad walking
+$(document).keyup(function(e) {
+  switch (e.which) {
+    case 96:  //numpad 0
+      sendMessageDirect('rest');
+      $('#message').val('');
+      break;
+
+    case 97:  //numpad 1
+      sendMessageDirect('sw');
+      $('#message').val('');
+      break;
+
+    case 98:  //numpad 2
+      sendMessageDirect('s');
+      $('#message').val('');
+      break;
+
+    case 99:  //numpad 3
+      sendMessageDirect('se');
+      $('#message').val('');
+      break;
+
+    case 100:  //numpad 4
+      sendMessageDirect('w');
+      $('#message').val('');
+      break;
+
+    case 101:  //numpad 5
+    sendMessageDirect('sn');
+    $('#message').val('');
+      break;
+
+    case 102:  //numpad 6
+      sendMessageDirect('e');
+      $('#message').val('');
+      break;
+
+    case 103:  //numpad 7
+      sendMessageDirect('nw');
+      $('#message').val('');
+      break;
+
+    case 104:  //numpad 8
+      sendMessageDirect('n');
+      $('#message').val('');
+      break;
+
+    case 105:  //numpad 9
+      sendMessageDirect('ne');
+      $('#message').val('');
+      break;
+
+    case 107:  //numpad +
+      sendMessageDirect('u');
+      $('#message').val('');
+      break;
+
+    case 109:  //numpad -
+      sendMessageDirect('d');
+      $('#message').val('');
+      break;
+
+    case 110:  //numpad .
+      sendMessageDirect('med');
+      $('#message').val('');
+      break;
+
+    default:
+
+  }
+
+});
 
 
 
