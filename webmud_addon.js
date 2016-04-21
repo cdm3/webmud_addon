@@ -160,6 +160,8 @@ const START_GROUP_SELECT_ID = 'startGroupSelect';
 const END_GROUP_SELECT_ID = 'endGroupSelect'
 const PATH_LIST = 'CustomPaths_';
 const GROUP_LIST = 'pathGroups_';
+const DB_NAME = 'webmud_addon';
+const DB_VERSION = 1;
 
 //Global variables used to manage player state
 let inCombat = false;
@@ -170,7 +172,6 @@ let stopWalkingFlag = '';
 let sendAutoCmds = false;
 let lastSwingTime = Date.now();
 let combatEndTime = Date.now();
-let roomIdToIndex = new Array();
 let partyInfo;
 let curPlayer;
 let map;
@@ -178,6 +179,8 @@ let movedFrom = new Object();
 let ctx;
 let map_size = 1000;
 let room_size = 10;
+let db;
+let curRoomID;
 
 
 /*****************************************************************************\
@@ -282,12 +285,8 @@ class Player {
 }
 
 class GameMap {
-  constructor(rooms, currentRoom) {
-    if (rooms) {
-      this._rooms = rooms;
-    } else {
-      this._rooms = new Array();
-    }
+  constructor(roomStore, currentRoom) {
+    this._roomStore = roomStore;
 
     if (currentRoom) {
       this._currentRoom = currentRoom;
@@ -295,74 +294,71 @@ class GameMap {
       this._currentRoom = new Object;
     }
 
-    this._unsaved = false;
+    this.export = false;
+
+    this._rooms = new Array();
   }
 
   move(movedFrom, actionData) {
-    let data = actionData;
-    let prevRoomId = this._currentRoom.id;
-    let movingTo = roomIdToIndex.indexOf(data.RoomID);
+    let txn = db.transaction(['rooms'], 'readwrite');
+    let store = txn.objectStore('rooms');
+    let data = Object.assign({}, actionData);
+    let movingFrom = Object.assign({}, movedFrom);
+    let movingTo;
+    let prevRoom;
 
-    if (movingTo === -1) {
-      let exits = new Object();
+    //get the new room from the database, if it exists
+    getRoom(movingFrom.id)
+      .then(function(result) {
+        prevRoom = result;
+        return getRoom(actionData.RoomID);
+      })
+      .then(function(result) {
+        movingTo = result;
+        return Promise.resolve();
+      })
+      .then(function(result) {
+        if (!movingTo) {
+          return addRoom(data);
+        } else {
+          return Promise.resolve(movingTo);
+        }
+      })
+      .then(function(result) {
+        movingTo = result;
 
-      for (let exit of data.ObviousExits) {
-        exits[translateDir(exit)] = -1;
-      }
-      //Add new room id to the master list and then get its index
-      roomIdToIndex.push(data.RoomID);
-      movingTo = roomIdToIndex.indexOf(data.RoomID);
+        if (prevRoom.exits[movingFrom.dir] === -1) {
+          prevRoom.exits[movingFrom.dir] = movingTo.id;
+        }
 
-      let room = new Room(movingTo, data.Name, exits);
-      this.addRoom(room);
-      this._unsaved = true;
-    }
+        if (movingTo.exits[oppositeDir(movingFrom.dir)] === -1) {
+          movingTo.exits[oppositeDir(movingFrom.dir)] = movingFrom.id;
+        }
 
-    if (this._currentRoom.exits[movedFrom.dir] === -1) {
-      this._currentRoom.exits[movedFrom.dir] = movingTo;
-      this._unsaved = true;
-    }
-
-    this._currentRoom = this._rooms[movingTo];
-
-    if (this._currentRoom.exits[oppositeDir(movedFrom.dir)] === -1) {
-      this._currentRoom.exits[oppositeDir(movedFrom.dir)] = movedFrom.id;
-      this._unsaved = true;
-    }
-
+        updateRoom(prevRoom)
+          .then(function() { return updateRoom(movingTo) })
+          .then(function() {
+            return Promise.resolve(map.drawMap(ctx, room_size, map_size, actionData.RoomID))
+          });
+      })
+      .catch(function(err) {
+        console.error(err);
+      });
   }
 
-  saveMap() {
-    localStorage.setItem('UserMap_', JSON.stringify(this));
-  }
-
-  addRoom(room) {
-    this._rooms.push(room);
-  }
-
-  getCurrentId() {
-    return (this._currentRoom.id);
-  }
-
-  unsaved() {
-    return this._unsaved;
-  }
-
-  getRoom(roomToGet) {
-    //return a room object of the specific id
-    return this._rooms[roomToGet];
-  }
-
-  setCurrentRoom(room) {
-    this._currentRoom = room;
-  }
-
-  drawMap(ctx, roomSize, drawSize) {
+  draw(ctx, roomSize, drawSize, currentRoomID) {
     let x = (ctx.canvas.width / 2) - (roomSize / 2);
     let y = (ctx.canvas.height / 2) - (roomSize / 2);
     let roomQueue  = new Array();
     let roomsToDraw = drawSize;
     let drawn = new Array();
+
+    let lookup = new Object();
+    let len = this._rooms.length;
+
+    for (let i = 0; i < len; i++) {
+      lookup[this._rooms[i].id] = this._rooms[i];
+    }
 
     //clear the canvas
     ctx.beginPath();
@@ -371,7 +367,7 @@ class GameMap {
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
     roomQueue.push({
-      'id':this._currentRoom.id,
+      'id':currentRoomID,
       'position':[x,y]
     });
 
@@ -384,7 +380,7 @@ class GameMap {
     ctx.stroke();
 
     //add it to the drawn array so it won't be redrawn
-    drawn.push(this._currentRoom.id);
+    drawn.push(currentRoomID);
 
     //reset the fill style
     ctx.fillStyle = 'black';
@@ -396,9 +392,9 @@ class GameMap {
       let parentId = roomQueue[0].id;
 
       //loop through each of the room's exits
-      for (let exit in this._rooms[parentId].exits) {
+      for (let exit in lookup[parentId].exits) {
         //check to see if room has already been drawn
-        if (drawn.indexOf(this._rooms[parentId].exits[exit]) === -1) {
+        if (drawn.indexOf(lookup[parentId].exits[exit]) === -1) {
 
           //variables for the connector and room x y coordinates
           let scx = x;
@@ -408,7 +404,7 @@ class GameMap {
           let rx = x;
           let ry = y;
 
-          let exitId = this._rooms[parentId].exits[exit];
+          let exitId = lookup[parentId].exits[exit];
 
           //set stroke color for default room
           ctx.strokeStyle = 'white';
@@ -495,7 +491,7 @@ class GameMap {
           ctx.lineTo(ecx,ecy);
           ctx.stroke();
 
-          if (this._rooms[parentId].exits[exit] !== -1) {
+          if (lookup[parentId].exits[exit] !== -1) {
             //draw room
             ctx.rect(rx, ry, roomSize, roomSize);
             ctx.fill();
@@ -523,7 +519,26 @@ class GameMap {
       i++;
 
     }  //end for roomsToDraw loop
-  }  //end drawMap method
+  }  //end draw method
+
+  drawMap(ctx, roomSize, drawSize, currentRoomID) {
+    let txn = db.transaction(['rooms'], 'readonly');
+    let store = txn.objectStore('rooms');
+
+    store.getAll().onsuccess = function(event) {
+      this._rooms = event.target.result;
+
+      this.draw(ctx, roomSize, drawSize, currentRoomID);
+
+      //export the map if the user requested it
+      if (map.export) {
+        document.getElementById('exportMap').href = ctx.canvas.toDataURL('image/png');
+        this.export = false;
+      }
+    }.bind(this);
+  }
+
+
 }  //end Map class
 
 class Room {
@@ -532,11 +547,6 @@ class Room {
     this.name = name;
     this.exits = exits;
   }
-
-  updateExit(dir, roomId) {
-    this.exits[dir] = roomId;
-  }
-
 }
 
 /*****************************************************************************\
@@ -580,8 +590,8 @@ class Room {
   //start or stop auto commands after loading preferences
   autoCmdCheck('autoCmd','autoCmdDelay','sendAutoCmds');
 
-  //send enter to start the map
-  sendMessageDirect('');
+  //open the database
+  openDatabase();
 
   //alert the player that the addon loaded successfully
   notifyPlayer('yellow','WebMUD addon successfully loaded');
@@ -1124,26 +1134,7 @@ function startAutoCmds(commands, cmdDelay) {
   setTimeout(startAutoCmds, cmdDelay, commands, cmdDelay);
 
 }
-/*
-function startAutoCmds(commands, cmdDelay) {
-  let commandArray = commands.split(',');
 
-  let interval = setInterval(() => {
-    if (sendAutoCmds) {
-      commandArray.forEach(function(cmd) {
-        sendMessageDirect(cmd);
-      });
-    } else {
-      //stop auto commands once the checkbox is unchecked
-      clearInterval(interval);
-      notifyPlayer('yellow','Auto Commands Stopped');
-    }
-  }, cmdDelay);
-
-  //tell the player commands started
-  notifyPlayer('yellow','Auto Commands Started');
-}
-*/
 
 /*****************************************************************************\
 | Path grouping code                                                          |
@@ -1448,6 +1439,33 @@ $(window).mousemove(function(event) {
 });
 */
 
+function openDatabase() {
+  let request = indexedDB.open(DB_NAME, DB_VERSION);
+
+  request.onerror = function(event) {
+    console.log('Could not open DB: ' + event.target.error);
+  }
+
+  request.onupgradeneeded = function(event) {
+    db = event.target.result;
+
+    if (db.objectStoreNames.contains('rooms')) {
+      db.deleteObjectStore('rooms');
+    }
+
+    db.createObjectStore('rooms', { keyPath: 'id' });
+
+  }  //end db upgrade
+
+  request.onsuccess = function(event) {
+    console.log('DB Opened');
+    db = event.target.result;
+
+    //start mapping by sending an enter to show the room
+    sendMessageDirect('');
+  }
+}
+
 function translateDir(dir) {
   let dirStr;
   switch (dir) {
@@ -1569,92 +1587,113 @@ function startNewMap(actionData) {
 
 }
 
-function loadMap(actionData) {
-  let data = actionData;
+function getRoom(id) {
+  let txn = db.transaction(['rooms'], 'readonly');
+  let store = txn.objectStore('rooms');
 
+  return new Promise(function(resolve, reject) {
+    let trans = store.get(id);
+
+    trans.onsuccess = function(event) {
+      resolve(event.target.result);
+    }
+
+    trans.onerror = function(event) {
+      reject(Error(event.target.error));
+    }
+  });
+}
+
+function addRoom(actionData) {
+  let txn = db.transaction(['rooms'], 'readwrite');
+  let store = txn.objectStore('rooms');
+
+  let id = actionData.RoomID;
+  let name = actionData.Name;
+  let exits = new Object();
+
+  for (let exit of actionData.ObviousExits) {
+    exits[translateDir(exit)] = -1;
+  }
+
+  let newRoom = new Room(id, name, exits);
+
+  return new Promise(function(resolve, reject) {
+    let trans = store.put(newRoom);
+
+    trans.onsuccess = function(event) {
+      resolve(newRoom);
+    }
+
+    trans.onerror = function(event) {
+      reject(Error(event.target.error));
+    }
+  });
+}
+
+function updateRoom(room) {
+  let txn = db.transaction(['rooms'], 'readwrite');
+  let store = txn.objectStore('rooms');
+
+  return new Promise(function(resolve, reject) {
+    let trans = store.put(room);
+
+    trans.onsuccess = function(event) {
+      resolve(event.target.result);
+    }
+
+    trans.onerror = function(event) {
+      reject(Error(event.target.error));
+    }
+  });
+}
+
+function loadMap(actionData) {
   //start auto mapping
   ctx = document.getElementById('mapCanvas').getContext('2d');
 
-  let savedMap = localStorage.getItem('UserMap_');
-  if (savedMap) {
-    savedMap = JSON.parse(savedMap);
-  }
-
-  //load room mapping index if it exists
-  roomIdToIndex = localStorage.getItem('roomIdToIndex_');
-  if (roomIdToIndex) {
-    roomIdToIndex = roomIdToIndex.split(',');
-  }
-
-  //load saved map if it exists. Otherwise create a new one
-  if (savedMap && roomIdToIndex) {
-    let id = roomIdToIndex.indexOf(data.RoomID);
-
-    if (id === -1) {
-      //unknown room so make a new one and add it to the list
-      let name = data.Name;
-      let exits = new Object();
-
-      for (let exit of data.ObviousExits) {
-        exits[translateDir(exit)] = -1;
+  getRoom(actionData.RoomID)
+    .then(function(room) {
+      if (!room) {
+        return addRoom(actionData);
+      } else {
+        return Promise.resolve(room);
       }
-      //Add new room id to the master list and then get its index
-      roomIdToIndex.push(data.RoomID);
-      id = roomIdToIndex.indexOf(data.RoomID);
+    })
+    .then(function(room) {
+      map = new GameMap('rooms', room);
 
-      //generate the new room
-      let room = new Room(id, data.Name, exits);
-      //start the existing map
-      map = new GameMap(savedMap._rooms, room);
-      //add the new room to the existing map
-      map.addRoom(room);
+      //now that map is loaded, show the room again to start the map
+      sendMessageDirect('');
 
-    } else {
-      //create the map using only the list of rooms
-      map = new GameMap(savedMap._rooms);
-      //query the map to get the existing room using the id
-      let room = map.getRoom(id);
-      //set the map's current room as the room we just got
-      map.setCurrentRoom(room);
-    }
-
-  } else {
-    //if a game map is not current saved, create a new one
-    startNewMap(actionData);
-  }
-
-  //save the newly loaded map back to disk
-  saveMapToStorage();
-
-}
-
-function saveMapToStorage() {
-  //save the room id mapping array
-  localStorage.setItem('roomIdToIndex_', roomIdToIndex.join(','));
-  //save the map object
-  map.saveMap();
+    })
+    .catch(function(err) {
+      console.error(err);
+    });
 }
 
 function resetMap() {
-  //clear the current map
-  map = null;
-  //reset the local storage to clear any saved maps
-  localStorage.setItem('UserMap_', '');
-  localStorage.setItem('roomIdToIndex_', '');
-  //force room refresh to start a new map
-  sendMessageDirect('');
+  let txn = db.transaction(['rooms'], 'readwrite');
+  let store = txn.objectStore('rooms');
+
+  store.clear().onsuccess = function(event) {
+    //clear the current map
+    map = null;
+    //show the room to load a new map
+    sendMessageDirect('');
+  }
+
 }
 
 function exportMap() {
   if (map) {
     let exCanvas = document.createElement('canvas');
-    exCanvas.width = Math.min( (roomIdToIndex.length * room_size * 4), 8000);
-    exCanvas.height = Math.min( (roomIdToIndex.length * room_size * 4), 8000);
+    exCanvas.width = 8000;
+    exCanvas.height = 8000;
     let exCtx = exCanvas.getContext('2d');
 
-    map.drawMap(exCtx, room_size, map_size);
-
-    document.getElementById('exportMap').href = exCanvas.toDataURL('image/png');
+    map.export = true;
+    map.drawMap(exCtx, room_size, map_size, curRoomID);
   }
 }
 
@@ -1905,7 +1944,7 @@ window.playerMove = function(actionData) {
     playerMoving = true;
     inCombat = false;
     movedFrom = {
-      'id':map.getCurrentId(),
+      'id':curRoomID,
       'dir':translateDir(actionData.Direction)
     };
   }
@@ -1917,20 +1956,23 @@ let wm_showRoom = window.showRoom;
 window.showRoom = function(actionData) {
   wm_showRoom(actionData);
   playerMoving = false;
+  curRoomID = actionData.RoomID;
 
   if (!map) {
     loadMap(actionData);
+
+  } else {
+
+    if (movedFrom.hasOwnProperty('id')) {
+      map.move(movedFrom, actionData);
+      //reset movedFrom
+      movedFrom = new Object();
+
+    } else {
+      map.drawMap(ctx, room_size, map_size, actionData.RoomID);
+    }
+
   }
-
-  if (movedFrom.hasOwnProperty('id')) {
-
-    map.move(movedFrom, actionData);
-    //if any updates were made to the map, save it to disk
-    saveMapToStorage();
-
-    movedFrom = new Object();
-  }
-  map.drawMap(ctx, room_size, map_size);
 }
 
 //Note time of last combat swing to fix movement combat bug
@@ -2018,7 +2060,7 @@ document.getElementById('mapOptions').addEventListener("click", function(e) {
     case 'applyMapOptions':
       map_size = parseInt(document.getElementById('mapSize').value);
       room_size = parseInt(document.getElementById('roomSize').value);
-      map.drawMap(ctx, room_size, map_size);
+      map.drawMap(ctx, room_size, map_size, curRoomID);
       break;
 
     default:
