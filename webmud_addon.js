@@ -71,13 +71,13 @@ $("<div id='pathAndLoop' class='panel col-xs-12 col-lg-8' style='padding:10px;fl
       <select id='groupingAllPathSelect' class='pathSelect' style='width:225px;'></select>\
     </p>\
     <p>\
-      <button class='btn btn-default' onclick=\"editGroup('new')\">New Group</button>\
       <button class='btn btn-default' onclick=\"editGroup('add')\">Add Path</button>\
       <button class='btn btn-default' onclick=\"editGroup('remove')\">Remove Path</button>\
+      <button class='btn btn-danger' onclick=\"deleteSelectedPath('CustomPaths_','groupingAllPathSelect','pathGroups_')\">Delete Path</button>\
     </p>\
     <p>\
-      <button class='btn btn-default' onclick=\"editGroup('delete')\">Delete Group</button>\
-      <button class='btn btn-default' onclick=\"deleteSelectedPath('CustomPaths_','groupingAllPathSelect','pathGroups_')\">Delete Path</button>\
+      <button class='btn btn-success' onclick=\"editGroup('new')\">New Group</button>\
+      <button class='btn btn-danger' onclick=\"editGroup('delete')\">Delete Group</button>\
     </p>\
   </div>\
 </div>\
@@ -112,13 +112,46 @@ $("<div id='importExportDialog' class='modal fade' tabindex='-1' role='dialog' a
           <button type='button' id='exportAll' class='btn btn-primary' style='float:left'>All</button>\
         </div>\
         <div style='margin:0 auto'>\
-          <button type'button' id='clearAllPaths' class='btn btn-danger'>Clear All Paths</button>\
+          <button type='button' id='clearAllPaths' class='btn btn-danger'>Clear All Paths</button>\
           <button type='button' class='btn btn-danger' data-dismiss='modal'>Close</button>\
         </div>\
       </div>\
     </div>\
   </div>\
-</div>").insertAfter("#divCharacterSetup")
+</div>").insertAfter("#divCharacterSetup");
+
+//Map window
+$("<div id='divMap' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
+  <canvas id='mapCanvas' height='200' width='280'>Browser doesn't support canvas</canvas>\
+  <div id='canvasControls' style='float:right'>\
+  <a href='#' id='saveMap'>Save</a><br />\
+  <a href='#' id='resetMap'>Reset</a><br />\
+  <a href='#' class='button' id='exportMap' download='WebMUD_Map.png'>Download</a><br />\
+  <a href='#' id='configMap' data-toggle='modal' data-target='#mapOptions'>Configure</a>\
+  </div>\
+</div>").insertAfter("#divHealth")
+
+//Mapping option modal
+$("<div class='modal fade' id='mapOptions' data-backdrop='false' tabindex='-1' role='dialog' aria-labelledby='mapOptions' aria-hidden='true' style='top:10%;right:0%;left:auto;bottom:auto;'>\
+      <div class='modal-dialog modal-sm'>\
+        <div class='modal-content'>\
+          <div class='modal-header'>\
+            <button type='button' class='close' data-dismiss='modal' aria-label='Close'><span aria-hidden='true'>&times;</span></button>\
+            <h4 class='modal-title'>Configure the map</h4>\
+          </div>\
+          <div class='modal-body'>\
+            Rooms to draw: <input type='text' id='mapSize' style='width:150px;' value='1000' />\
+            <br />\
+            Room size (pixels): <input type='text' id='roomSize' style='width:150px;' value='10' />\
+          </div>\
+          <div class='modal-footer'>\
+            <button type='button' id='applyMapOptions' class='btn btn-success'>Apply</button>\
+            <button type='button' class='btn btn-danger' data-dismiss='modal'>Close</button>\
+          </div>\
+        </div>\
+      </div>\
+    </div>"
+).insertAfter("#divCharacterSetup");
 
 //Constants used across many functions
 const START_PATH_SELECT_ID = 'startPathSelect';
@@ -137,7 +170,14 @@ let stopWalkingFlag = '';
 let sendAutoCmds = false;
 let lastSwingTime = Date.now();
 let combatEndTime = Date.now();
+let roomIdToIndex = new Array();
+let partyInfo;
 let curPlayer;
+let map;
+let movedFrom = new Object();
+let ctx;
+let map_size = 1000;
+let room_size = 10;
 
 
 /*****************************************************************************\
@@ -241,6 +281,263 @@ class Player {
   }
 }
 
+class GameMap {
+  constructor(rooms, currentRoom) {
+    if (rooms) {
+      this._rooms = rooms;
+    } else {
+      this._rooms = new Array();
+    }
+
+    if (currentRoom) {
+      this._currentRoom = currentRoom;
+    } else {
+      this._currentRoom = new Object;
+    }
+
+    this._unsaved = false;
+  }
+
+  move(movedFrom, actionData) {
+    let data = actionData;
+    let prevRoomId = this._currentRoom.id;
+    let movingTo = roomIdToIndex.indexOf(data.RoomID);
+
+    if (movingTo === -1) {
+      let exits = new Object();
+
+      for (let exit of data.ObviousExits) {
+        exits[translateDir(exit)] = -1;
+      }
+      //Add new room id to the master list and then get its index
+      roomIdToIndex.push(data.RoomID);
+      movingTo = roomIdToIndex.indexOf(data.RoomID);
+
+      let room = new Room(movingTo, data.Name, exits);
+      this.addRoom(room);
+      this._unsaved = true;
+    }
+
+    if (this._currentRoom.exits[movedFrom.dir] === -1) {
+      this._currentRoom.exits[movedFrom.dir] = movingTo;
+      this._unsaved = true;
+    }
+
+    this._currentRoom = this._rooms[movingTo];
+
+    if (this._currentRoom.exits[oppositeDir(movedFrom.dir)] === -1) {
+      this._currentRoom.exits[oppositeDir(movedFrom.dir)] = movedFrom.id;
+      this._unsaved = true;
+    }
+
+  }
+
+  saveMap() {
+    localStorage.setItem('UserMap_', JSON.stringify(this));
+  }
+
+  addRoom(room) {
+    this._rooms.push(room);
+  }
+
+  getCurrentId() {
+    return (this._currentRoom.id);
+  }
+
+  unsaved() {
+    return this._unsaved;
+  }
+
+  getRoom(roomToGet) {
+    //return a room object of the specific id
+    return this._rooms[roomToGet];
+  }
+
+  setCurrentRoom(room) {
+    this._currentRoom = room;
+  }
+
+  drawMap(ctx, roomSize, drawSize) {
+    let x = (ctx.canvas.width / 2) - (roomSize / 2);
+    let y = (ctx.canvas.height / 2) - (roomSize / 2);
+    let roomQueue  = new Array();
+    let roomsToDraw = drawSize;
+    let drawn = new Array();
+
+    //clear the canvas
+    ctx.beginPath();
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+    roomQueue.push({
+      'id':this._currentRoom.id,
+      'position':[x,y]
+    });
+
+    //the current room is drawn to the center of the canvas as a start
+    //position.  It also gets special formatting
+    ctx.rect(x, y, roomSize, roomSize);
+    ctx.strokeStyle = 'white';
+    ctx.fillStyle = 'greenyellow';
+    ctx.fill();
+    ctx.stroke();
+
+    //add it to the drawn array so it won't be redrawn
+    drawn.push(this._currentRoom.id);
+
+    //reset the fill style
+    ctx.fillStyle = 'black';
+
+    let i = 0;
+    while ( (roomQueue.length > 0) && (i < roomsToDraw) ) {
+      x = roomQueue[0].position[0];
+      y = roomQueue[0].position[1];
+      let parentId = roomQueue[0].id;
+
+      //loop through each of the room's exits
+      for (let exit in this._rooms[parentId].exits) {
+        //check to see if room has already been drawn
+        if (drawn.indexOf(this._rooms[parentId].exits[exit]) === -1) {
+
+          //variables for the connector and room x y coordinates
+          let scx = x;
+          let scy = y;
+          let ecx = x;
+          let ecy = y;
+          let rx = x;
+          let ry = y;
+
+          let exitId = this._rooms[parentId].exits[exit];
+
+          //set stroke color for default room
+          ctx.strokeStyle = 'white';
+
+          //determine the x y coordinates for the draw based on direction
+          switch (exit) {
+            case 'n':
+              scx = x + (roomSize / 2);
+              ecx = scx;
+              ecy = y - roomSize;
+              ry = y - (roomSize * 2);
+              break;
+
+            case 's':
+              scx = x + (roomSize / 2);
+              ecx = scx
+              scy = y + roomSize;
+              ecy = y + (roomSize * 2);
+              ry = y + (roomSize * 2);
+              break;
+
+            case 'e':
+              scx = x + roomSize;
+              ecx = x + (roomSize * 2);
+              scy = y + (roomSize / 2);
+              ecy = scy;
+              rx = x + (roomSize * 2);
+              break;
+
+            case 'w':
+              ecx = x - roomSize;
+              scy = y + (roomSize / 2);
+              ecy = scy;
+              rx = x - (roomSize * 2);
+              break;
+
+            case 'ne':
+              scx = x + roomSize;
+              ecx = x + (roomSize * 2);
+              ecy = y - roomSize;
+              rx = x + (roomSize * 2);
+              ry = y - (roomSize * 2);
+              break;
+
+            case 'se':
+              scx = x + roomSize;
+              ecx = x + (roomSize * 2);
+              scy = y + roomSize;
+              ecy = y + (roomSize * 2);
+              rx = x + (roomSize * 2);
+              ry = y + (roomSize * 2);
+              break;
+
+            case 'nw':
+              ecx = x - roomSize;
+              ecy = y - roomSize;
+              rx = x - (roomSize * 2);
+              ry = y - (roomSize * 2);
+              break;
+
+            case 'sw':
+              ecx = x - roomSize;
+              scy = y + roomSize;
+              ecy = y + (roomSize * 2);
+              rx = x - (roomSize * 2);
+              ry = y + (roomSize * 2);
+              break;
+
+            case 'u':
+              ctx.strokeStyle = 'orange';
+              break;
+
+            case 'd':
+              ctx.strokeStyle = 'orange';
+              break;
+
+            default:
+
+          }
+
+          //draw connector
+          ctx.beginPath();
+          ctx.moveTo(scx,scy);
+          ctx.lineTo(ecx,ecy);
+          ctx.stroke();
+
+          if (this._rooms[parentId].exits[exit] !== -1) {
+            //draw room
+            ctx.rect(rx, ry, roomSize, roomSize);
+            ctx.fill();
+            ctx.stroke();
+
+            //add connected visited room to the drawing queue
+            if ( !(exit === 'u' || exit === 'd') ) {
+              roomQueue.push({
+                'id':exitId,
+                'position':[rx,ry]
+              });
+            }
+
+          }
+
+          //add it to the drawn array so it won't be redrawn
+          if (exitId !== -1) {
+            drawn.push(exitId);
+          }
+        }  //end if room
+      }  //end for exits loop
+
+      //remove the completed room from the queue for the next loop
+      roomQueue.shift();
+      i++;
+
+    }  //end for roomsToDraw loop
+  }  //end drawMap method
+}  //end Map class
+
+class Room {
+  constructor(id, name, exits) {
+    this.id = id;
+    this.name = name;
+    this.exits = exits;
+  }
+
+  updateExit(dir, roomId) {
+    this.exits[dir] = roomId;
+  }
+
+}
 
 /*****************************************************************************\
 | Initialization code (self invoked)                                          |
@@ -283,6 +580,9 @@ class Player {
   //start or stop auto commands after loading preferences
   autoCmdCheck('autoCmd','autoCmdDelay','sendAutoCmds');
 
+  //send enter to start the map
+  sendMessageDirect('');
+
   //alert the player that the addon loaded successfully
   notifyPlayer('yellow','WebMUD addon successfully loaded');
 
@@ -302,13 +602,19 @@ function lookupPathAndMove(startSelectId, endSelectId, delaySelectId, runPath, l
   stopWalkingFlag = '';
 
   if (loopPath) {
-    let path = localStorage.getItem(start);
-    //start the path
-    walkPath(path, stepDelay, loopPath, start);
-    //tell the player
-    notifyPlayer('greenyellow', 'Looping of ' + start + ' started.');
-    //disable movement buttons to prevent multiple clicks
-    toggleMoveButtons(false);
+    if (start.slice(0,5) !== 'loop_') {
+      window.alert('In order to loop, you must select a loop as the starting \
+                    room. Loops begin with \"loop\" and can be created with the \
+                    \"Save Loop\" button under \"Path and Loop Creation\"');
+
+    } else {
+      let path = localStorage.getItem(start);
+      //start the path
+      walkPath(path, stepDelay, loopPath, start);
+      //tell the player
+      notifyPlayer('greenyellow', 'Looping of ' + start + ' started.');
+
+    }
 
   } else {
     //for not loops, find the shortest path and build the step string
@@ -324,18 +630,13 @@ function lookupPathAndMove(startSelectId, endSelectId, delaySelectId, runPath, l
       }
 
       //start the path
-      walkPath(steps, stepDelay, loopPath, start);
+      walkPath(steps, stepDelay, loopPath, path.split(',').join(' => '));
       //tell the player
       notifyPlayer('greenyellow', 'Walking path: ' + path.split(',').join(' => '));
-      //disable movement buttons to prevent multiple clicks
-      toggleMoveButtons(false);
-
-      //reverse the selected start/end group and path for quality of life
-      switchPathSelection();
 
     } else {
       let displayString = 'ERROR: No path found between ' + start + ' and ' + end;
-      document.alert(displayString);
+      window.alert(displayString);
     }
   }
 
@@ -347,11 +648,14 @@ function walkPath(path, stepDelay, loopPath, selectedPath) {
   let pathArray = path.split(',');
   let genObj = genFunc(pathArray);
 
+  //disable movement buttons to prevent multiple clicks
+  toggleMoveButtons(false);
+
   let interval = setInterval(() => {
     //The following if statement checks a bunch of boolians so I use 'not' logic
     //which lets me keep the line short
     if (
-        !(inCombat || playerMoving || playerResting || aiRunning)
+        !(inCombat || playerMoving || resting || meditating || aiRunning)
         && ((combatEndTime + 1000) < Date.now())
       ) {
 
@@ -364,6 +668,11 @@ function walkPath(path, stepDelay, loopPath, selectedPath) {
         clearInterval(interval);
         //enable the movement buttons
         toggleMoveButtons(true);
+
+        if (!loopPath && stopWalkingFlag !== 'now') {
+          //reverse the selected start/end group and path for quality of life
+          switchPathSelection();
+        }
 
         //Determine the reason or stopping and notify the player
         if (loopPath && stopWalkingFlag === '') {
@@ -393,12 +702,33 @@ function walkPath(path, stepDelay, loopPath, selectedPath) {
         }
 
         //re-enable combat if it was disabled for a run
-        sendMessageDirect('EnableAI Combat');
-        document.getElementById('chkAICombat').checked = true;
+        if (document.getElementById('chkAICombat').checked === false) {
+          sendMessageDirect('EnableAI Combat');
+          document.getElementById('chkAICombat').checked = true;
+        }
+
+        //save the player's current settings
+        curPlayer.updateSettings();
 
       } else {
         //Send the next step
-        sendMessageDirect(val.value);
+        sendMessageDirect(val.value[0]);
+
+        //update the player
+        if (loopPath) {
+          if (stopWalkingFlag === 'end of loop') {
+            notifyPlayer('greenyellow', 'Stopping at end of current loop (' + selectedPath + '): ' +
+                          val.value[1] + ' steps left');
+          } else {
+            notifyPlayer('greenyellow', 'Looping ' + selectedPath + ' (' +
+                          val.value[1] + ' steps left)');
+          }
+
+        } else {
+          notifyPlayer('greenyellow', 'Walking path (' + val.value[1] +
+                      ' steps left): ' + selectedPath);
+        }
+
       }
     } else {
       //check for combat inactivity where combat is set to true but a swing
@@ -408,19 +738,42 @@ function walkPath(path, stepDelay, loopPath, selectedPath) {
         //reset swing timer so combat doesn't disable right away
         lastSwingTime = (Date.now() + 10000);
       }
+
+      //failsafe for when the AI doesn't properly break after resting
+      if ( (resting || meditating) && playerResting === false ) {
+        sendMessageDirect('break');
+      }
+      /*
+      //failsafe for when the AI doesn't properly break after party running
+      if (aiRunning) {
+        let memberResting = false;
+        sendMessageDirect('par');
+        //check to see if any of the party members are resting
+        for (let member of partyInfo) {
+          if (member.HPPercent < 100 || memberResting) {
+            memberResting = true;
+          }
+        }
+        aiRunning = memberResting;
+      }
+      */
     }
   }, stepDelay);
 }
 
 function* genFunc(passedArr) {
   let Arr = passedArr
+  let i = Arr.length;
+
   for(let item of Arr) {
-    yield item;
+    yield [item, --i];
   }
 }
 
 function stopWalking(whenToStop) {
   stopWalkingFlag = whenToStop;
+
+  notifyPlayer('yellow', 'Stop walking selected, will stop walking: ' + whenToStop);
 }
 
 function switchPathSelection() {
@@ -448,10 +801,17 @@ function newPath(pathList, pathType) {
   let custPaths = localStorage.getItem(pathList);
   let startingRoom = removeSpaces(document.getElementById('startingRoom').value);
   let endingRoom = removeSpaces(document.getElementById('endingRoom').value);
-  let newPath = removeSpaces(document.getElementById('newPath').value);
+
+  //Get the path from the text box then remove extra spaces
+  let newPath = document.getElementById('newPath').value.split(',');
+
+  for (let i = 0; i < newPath.length; i++) {
+    newPath[i] = newPath[i].trim();
+  }
+  //rejoin the array back into a string so we can store the path
+  newPath = newPath.join(',');
 
   if (pathType === 'path') {
-    //todo add reverser split.reverse.join
     let newPathName = startingRoom + '__2__' + endingRoom;
     let newPathNameReverse = endingRoom + '__2__' + startingRoom;
     let newPathReverse = reversePath(newPath);
@@ -736,6 +1096,9 @@ function autoCmdCheck(cmdBox, delayId, cmdCheckBox) {
     sendAutoCmds = true;
     startAutoCmds(commands, cmdDelay * 1000);
 
+    //tell the player commands started
+    notifyPlayer('yellow','Auto Commands Started');
+
   } else {
     sendAutoCmds = false;
 
@@ -745,6 +1108,23 @@ function autoCmdCheck(cmdBox, delayId, cmdCheckBox) {
   curPlayer.updateSettings();
 }
 
+function startAutoCmds(commands, cmdDelay) {
+  let commandArray = commands.split(',');
+
+  if (sendAutoCmds) {
+    commandArray.forEach(function(cmd) {
+      sendMessageDirect(cmd);
+    });
+  } else {
+    //stop auto commands once the checkbox is unchecked
+    notifyPlayer('yellow','Auto Commands Stopped');
+    return;
+  }
+
+  setTimeout(startAutoCmds, cmdDelay, commands, cmdDelay);
+
+}
+/*
 function startAutoCmds(commands, cmdDelay) {
   let commandArray = commands.split(',');
 
@@ -763,7 +1143,7 @@ function startAutoCmds(commands, cmdDelay) {
   //tell the player commands started
   notifyPlayer('yellow','Auto Commands Started');
 }
-
+*/
 
 /*****************************************************************************\
 | Path grouping code                                                          |
@@ -1044,6 +1424,241 @@ function buildPathMap() {
 
 
 /*****************************************************************************\
+| Auto mapping code                                                           |
+\*****************************************************************************/
+
+/*
+let isDragging = false;
+
+$("#mapCanvas").mousedown(function(){
+    isDragging = true;
+});
+
+$(window).mouseup(function(){
+    isDragging = false;
+});
+
+$(window).mousemove(function(event) {
+    if (isDragging == true) {
+      let x = event.clientX - event.target.offsetLeft - (event.target.width / 2);
+      let y = event.clientY - event.target.offsetTop - (event.target.height / 2);
+      ctx.setTransform(1,0,0,1,x,y);
+      map.drawMap(ctx,room_size,map_size);
+    }
+});
+*/
+
+function translateDir(dir) {
+  let dirStr;
+  switch (dir) {
+    case 0:
+    case 'north':
+      dirStr = 'n';
+      break;
+
+    case 1:
+    case 'south':
+      dirStr = 's';
+      break;
+
+    case 2:
+    case 'east':
+      dirStr = 'e';
+      break;
+
+    case 3:
+    case 'west':
+      dirStr = 'w';
+      break;
+
+    case 4:
+    case 'northeast':
+      dirStr = 'ne';
+      break;
+
+    case 5:
+    case 'northwest':
+      dirStr = 'nw';
+      break;
+
+    case 6:
+    case 'southeast':
+      dirStr = 'se';
+      break;
+
+    case 7:
+    case 'southwest':
+      dirStr = 'sw';
+      break;
+
+    case 8:
+    case 'up':
+      dirStr = 'u';
+      break;
+
+    case 9:
+    case 'down':
+      dirStr = 'd';
+      break;
+
+    default:
+
+  }
+  return dirStr;
+}
+
+function oppositeDir(dir) {
+  let oppDir;
+  switch (dir) {
+    case 'n':
+      oppDir = 's';
+      break;
+    case 's':
+      oppDir = 'n';
+      break;
+    case 'e':
+      oppDir = 'w';
+      break;
+    case 'w':
+      oppDir = 'e';
+      break;
+    case 'ne':
+      oppDir = 'sw';
+      break;
+    case 'nw':
+      oppDir = 'se';
+      break;
+    case 'se':
+      oppDir = 'nw';
+      break;
+    case 'sw':
+      oppDir = 'ne';
+      break;
+    case 'u':
+      oppDir = 'd';
+      break;
+    case 'd':
+      oppDir = 'u';
+      break;
+
+    default:
+
+  }
+  return oppDir;
+}
+
+function startNewMap(actionData) {
+  let data = actionData;
+
+  roomIdToIndex = new Array();
+
+  roomIdToIndex.push(data.RoomID);
+
+  let id = roomIdToIndex.indexOf(data.RoomID);
+  let name = data.Name;
+  let exits = new Object();
+
+  for (let exit of data.ObviousExits) {
+    exits[translateDir(exit)] = -1;
+  }
+
+  let room = new Room(id, name, exits);
+  let rooms = new Array();
+  rooms.push(room);
+  map = new GameMap(rooms, room);
+
+}
+
+function loadMap(actionData) {
+  let data = actionData;
+
+  //start auto mapping
+  ctx = document.getElementById('mapCanvas').getContext('2d');
+
+  let savedMap = localStorage.getItem('UserMap_');
+  if (savedMap) {
+    savedMap = JSON.parse(savedMap);
+  }
+
+  //load room mapping index if it exists
+  roomIdToIndex = localStorage.getItem('roomIdToIndex_');
+  if (roomIdToIndex) {
+    roomIdToIndex = roomIdToIndex.split(',');
+  }
+
+  //load saved map if it exists. Otherwise create a new one
+  if (savedMap && roomIdToIndex) {
+    let id = roomIdToIndex.indexOf(data.RoomID);
+
+    if (id === -1) {
+      //unknown room so make a new one and add it to the list
+      let name = data.Name;
+      let exits = new Object();
+
+      for (let exit of data.ObviousExits) {
+        exits[translateDir(exit)] = -1;
+      }
+      //Add new room id to the master list and then get its index
+      roomIdToIndex.push(data.RoomID);
+      id = roomIdToIndex.indexOf(data.RoomID);
+
+      //generate the new room
+      let room = new Room(id, data.Name, exits);
+      //start the existing map
+      map = new GameMap(savedMap._rooms, room);
+      //add the new room to the existing map
+      map.addRoom(room);
+
+    } else {
+      //create the map using only the list of rooms
+      map = new GameMap(savedMap._rooms);
+      //query the map to get the existing room using the id
+      let room = map.getRoom(id);
+      //set the map's current room as the room we just got
+      map.setCurrentRoom(room);
+    }
+
+  } else {
+    //if a game map is not current saved, create a new one
+    startNewMap(actionData);
+  }
+
+  //save the newly loaded map back to disk
+  saveMapToStorage();
+
+}
+
+function saveMapToStorage() {
+  //save the room id mapping array
+  localStorage.setItem('roomIdToIndex_', roomIdToIndex.join(','));
+  //save the map object
+  map.saveMap();
+}
+
+function resetMap() {
+  //clear the current map
+  map = null;
+  //reset the local storage to clear any saved maps
+  localStorage.setItem('UserMap_', '');
+  localStorage.setItem('roomIdToIndex_', '');
+  //force room refresh to start a new map
+  sendMessageDirect('');
+}
+
+function exportMap() {
+  if (map) {
+    let exCanvas = document.createElement('canvas');
+    exCanvas.width = Math.min( (roomIdToIndex.length * room_size * 4), 8000);
+    exCanvas.height = Math.min( (roomIdToIndex.length * room_size * 4), 8000);
+    let exCtx = exCanvas.getContext('2d');
+
+    map.drawMap(exCtx, room_size, map_size);
+
+    document.getElementById('exportMap').href = exCanvas.toDataURL('image/png');
+  }
+}
+
+/*****************************************************************************\
 | General functions                                                           |
 \*****************************************************************************/
 
@@ -1059,10 +1674,6 @@ function removeSpaces(str) {
 }
 
 function reloadSelectors() {
-  //load start room
-  //load end room
-  //load grouping
-
   //Save the current state of the group selectors
   let curStartGroup = document.getElementById(START_GROUP_SELECT_ID).value;
   let curEndGroup = document.getElementById(END_GROUP_SELECT_ID).value;
@@ -1221,6 +1832,7 @@ function toggleMoveButtons(turnOn) {
   }
 }
 
+
 /*****************************************************************************\
 | Event handling code                                                         |
 \*****************************************************************************/
@@ -1288,8 +1900,16 @@ window.gainExperience = function(actionData) {
 let wm_playerMove = window.playerMove;
 window.playerMove = function(actionData) {
   wm_playerMove(actionData);
-  playerMoving = true;
-  inCombat = false;
+
+  if (actionData.Result === 1 || actionData.Result === 2) {
+    playerMoving = true;
+    inCombat = false;
+    movedFrom = {
+      'id':map.getCurrentId(),
+      'dir':translateDir(actionData.Direction)
+    };
+  }
+
 }
 
 //Move ended, set move flag to false
@@ -1297,6 +1917,20 @@ let wm_showRoom = window.showRoom;
 window.showRoom = function(actionData) {
   wm_showRoom(actionData);
   playerMoving = false;
+
+  if (!map) {
+    loadMap(actionData);
+  }
+
+  if (movedFrom.hasOwnProperty('id')) {
+
+    map.move(movedFrom, actionData);
+    //if any updates were made to the map, save it to disk
+    saveMapToStorage();
+
+    movedFrom = new Object();
+  }
+  map.drawMap(ctx, room_size, map_size);
 }
 
 //Note time of last combat swing to fix movement combat bug
@@ -1334,6 +1968,13 @@ window.partyMessage = function(actionData) {
   }
 }
 
+//Keep track of party health
+let wm_party = window.party;
+window.party = function(actionData) {
+  wm_party(actionData);
+  partyInfo = actionData.PartyMemberInfos;
+}
+
 //Remove resting flag when player is a full HP/MA
 let wm_updateHPMA = window.updateHPMA;
 window.updateHPMA = function(actionData) {
@@ -1364,6 +2005,41 @@ document.getElementById('importExportDialog').addEventListener("click", function
 
     case 'clearAllPaths':
       clearAllPaths('CustomPaths_','pathGroups_')
+      break;
+
+    default:
+
+  }
+},false);
+
+//event listener for the map options modal
+document.getElementById('mapOptions').addEventListener("click", function(e) {
+  switch (e.target.id) {
+    case 'applyMapOptions':
+      map_size = parseInt(document.getElementById('mapSize').value);
+      room_size = parseInt(document.getElementById('roomSize').value);
+      map.drawMap(ctx, room_size, map_size);
+      break;
+
+    default:
+
+  }
+},false);
+
+//event listener for the map
+document.getElementById('divMap').addEventListener("click", function(e) {
+  switch (e.target.id) {
+    case 'saveMap':
+      saveMapToStorage();
+      notifyPlayer('green', 'Map successfully saved');
+      break;
+
+    case 'resetMap':
+      resetMap();
+      break;
+
+    case 'exportMap':
+      exportMap();
       break;
 
     default:
