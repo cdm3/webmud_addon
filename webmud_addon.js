@@ -542,10 +542,28 @@ class GameMap {
 }  //end Map class
 
 class Room {
-  constructor(id, name, exits) {
+  constructor(id, name, altName, group, commands, exits) {
     this.id = id;
     this.name = name;
     this.exits = exits;
+
+    if (altName) {
+      this.altName = altName;
+    } else {
+      this.altName = null;
+    }
+
+    if (group) {
+      this.group = group;
+    } else {
+      this.group = null;
+    }
+
+    if (commands) {
+      this.commands = commands;
+    } else {
+      this.commands = null;
+    }
   }
 }
 
@@ -1363,6 +1381,43 @@ function findPath(startRoom, endRoom) {
   }
 }
 
+function findAutoPath(startID, endID) {
+  let rooms = new Object();
+
+  buildAutoPathMap()
+    .then(function(event) {
+      let pathMap = event.target.result['connectGraph'];
+      rooms = event.target.result['rooms'];
+
+      let graph = new Graph(pathMap);
+      let path = graph.findShortestPath(startID, endID);
+
+      return Promise.resolve(path);
+    })
+    .then(function(event) {
+      let pathList = event.target.result;
+      let path = new Array();
+
+      let lookup = new Object();
+
+      for (let i = 0; i < rooms.length; i++) {
+        lookup[rooms[i].id] = rooms[i];
+      }
+
+      for (let i = 0; i < pathList.length; i++) {
+        let exits = lookup[pathList[i]].exits;
+        for (let exit in exits) {
+          if ( exits[exit] === pathList[i + 1] ) {
+            path.push(exit);
+          } //end if check
+        } //end for exit in exits loop
+      } //end for pathList loop
+
+      //return comma seperated string of the path
+      return path.join(',');
+    });
+}
+
 /*
   function to build a path map of all existing paths that is passed to a
   pathfinding function
@@ -1413,6 +1468,40 @@ function buildPathMap() {
   return connectGraph;
 }
 
+/*
+  function to build a path map of all known rooms in the map that is passed
+  to a pathfinding function.
+
+  Async, returns a Promise
+*/
+function buildAutoPathMap() {
+  let txn = db.transaction(['rooms'], 'readonly');
+  let store = txn.objectStore('rooms');
+
+  let connectGraph = new Object();
+  let connections = new Object();
+
+  store.getAll().onsuccess = function(event) {
+    let rooms = event.target.result;
+
+    for (let room of rooms) {
+      let connections = new Object();
+
+      for (let exit of rooms.exits) {
+        connections[exit.id] = 1;
+      }
+      connectGraph[room.id] = connections;
+    }
+
+    let returnObject = new Object();
+
+    returnObject['rooms'] = rooms;
+    returnObject['connectGraph'] = connectGraph;
+
+    return Promise.resolve(returnObject);
+  }
+}
+
 
 /*****************************************************************************\
 | Auto mapping code                                                           |
@@ -1453,7 +1542,10 @@ function openDatabase() {
       db.deleteObjectStore('rooms');
     }
 
-    db.createObjectStore('rooms', { keyPath: 'id' });
+    let store = db.createObjectStore('rooms', { keyPath: 'id' });
+
+    store.createIndex('altName', 'altName', { unique: true });
+    store.createIndex('group', 'group', { unique: false });
 
   }  //end db upgrade
 
