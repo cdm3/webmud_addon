@@ -1,7 +1,7 @@
-/*jshint multistr: true */
-/*jshint esversion: 6 */
-/*jshint -W117*/
-/*jshint -W097*/
+/*global $:true playerID:true sendMessageDirect:true resting:true
+         meditating:true
+*/
+
 
 'use strict';
 
@@ -11,46 +11,52 @@
 
 //Add some elements so the user can select paths and options
 $("<div id='pathAndLoop' class='panel col-xs-12 col-lg-8' style='padding:10px;float:left;margin-bottom:10px'>\
-    <p>Pathing and Looping</p>\
-    <p>Select a starting and ending room then choose Walk or Run</p>\
-    <div id='roomSelect' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-      <p>Starting Room / Loop</p>\
-      Group: <select id='startGroupSelect' onchange=\"groupSelected('startGroupSelect','startPathSelect')\" style='width:225px;'></select>\
-      <br />Room: <select id='startPathSelect' onchange='displayPath()' style='width:225px;'></select>\
-      <br /><br /><p>Ending Room (n/a for loops)</p>\
-      Group: <select id='endGroupSelect' onchange=\"groupSelected('endGroupSelect','endPathSelect')\" style='width:225px;'></select>\
-      <br />Room: <select id='endPathSelect' onchange='displayPath()' style='width:225px;'></select>\
+    <div class='panel col-xs-12 col-lg-6' style='padding:10px;float:left;margin-bottom:10px'>\
+      <div id='roomSelect' class='panel col-xs-12 col-lg-12' style='padding:10px;float:left;margin-bottom:10px'>\
+        <p>Pathing and Looping - Old style: Select a starting and ending room then choose Walk or Run</p>\
+        <p>Starting Room / Loop</p>\
+        Group: <select id='startGroupSelect' onchange=\"groupSelected('startGroupSelect','startPathSelect')\" style='width:250px;'></select>\
+        <br />Room: <select id='startPathSelect' onchange='displayPath()' style='width:250px;'></select>\
+        <br />\
+        <button id='pathLoop'class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,true)\">Loop</button>\
+        <button class='btn btn-danger' onclick=\"stopWalking('end of loop')\">End Loop</button>\
+        <br /><br /><p>Ending Room (n/a for loops)</p>\
+        Group: <select id='endGroupSelect' onchange=\"groupSelected('endGroupSelect','endPathSelect')\" style='width:250px;'></select>\
+        <br />Room: <select id='endPathSelect' onchange='displayPath()' style='width:250px;'></select>\
+        <button id='pathWalk' class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,false)\">Walk</button>\
+        <button id='pathRun'class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',true,false)\">Run</button>\
+        <button class='btn btn-danger' onclick=\"stopWalking('now')\">STOP!</button>\
+      </div>\
+      <div id='pathControls' class='panel col-xs-12 col-lg-12' style='padding:10px;clear:left;margin-bottom:10px'>\
+        <br />Fine tune step delay (ms):\
+        <input type='number' id='stepDelay' name = 'stepDelay' min='1' value='2500' style='width:60px;'/>\
+      </div>\
     </div>\
-    <div id='pathControls' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-      <button id='pathWalk' class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,false)\">Walk</button>\
-      <button id='pathRun'class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',true,false)\">Run</button>\
-      <button class='btn btn-danger' onclick=\"stopWalking('now')\">STOP!</button>\
-      <br />\
-      <button id='pathLoop'class='btn btn-default' onclick=\"lookupPathAndMove('startPathSelect','endPathSelect','stepDelay',false,true)\">Loop</button>\
-      <button class='btn btn-danger' onclick=\"stopWalking('end of loop')\">End Loop</button>\
-      <br />Fine tune step delay (ms):\
-      <input type='number' id='stepDelay' name = 'stepDelay' min='1' value='2500' style='width:60px;'/>\
-    </div>\
-    <div id='divAutoPath' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-      <p>AutoMap Path, Select Destination \
-      <a href='#' id='editAutoRooms' data-toggle='modal' data-target='#mapEdit'>(edit rooms)</a>\</p>\
-      Group: <select id='autoGroup' onchange=\"autoGroupSelected('autoGroup', 'autoRoom', false)\" style='width:175px;'></select>\
-      <br />Room: <select id='autoRoom' onchange='displayAutoPath()' style='width:175px;'></select>\
-      <button id='autoMapWalk' class='btn btn-default'>Walk</button>\
-      <button id='autoMapRun' class='btn btn-default'>Run</button>\
-    </div>\
-    <div id='autoCommands' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
-      <p>Auto Commands</p>\
-      <p>Enter a command and frequency below. Seperate multiple commands with a comma. Toggle sending on/off with the checkbox.</p>\
-      <p>Send auto commands:\
-        <input type='checkbox' id='sendAutoCmds' onchange=\"autoCmdCheck('autoCmd','autoCmdDelay','sendAutoCmds')\")/>\
-      </p>\
-      <p>Command(s):\
-        <input type='text' id='autoCmd' style='width:150px' value='' />\
-      </p>\
-      <p>Delay (sec):\
-        <input type='number' id='autoCmdDelay' name = 'autoCmdDelay' min='1' value='6' style='width:50px;'/>\
-      </p>\
+    <div class='panel col-xs-12 col-lg-6' style='padding:10px;float:left;margin-bottom:10px'>\
+      <div id='divAutoPath' class='panel col-xs-12 col-lg-12' style='padding:10px;float:left;margin-bottom:10px'>\
+        <p>AutoMap Path, Select Destination \
+        <a href='#' id='editAutoRooms' data-toggle='modal' data-target='#mapEdit'>(edit rooms)</a>\</p>\
+        Group: <select id='autoGroup' onchange=\"autoGroupSelected('autoGroup', 'autoRoom', false)\" onfocus=\"autoGroupSelected('autoGroup', 'autoRoom', false)\" style='width:250px;'></select>\
+        <br />Room: <select id='autoRoom' onchange='displayAutoPath()' onfocus='displayAutoPath()' style='width:250px;'></select>\
+        <br />\
+        <br />\
+        <button id='autoMapWalk' class='btn btn-default'>Walk</button>\
+        <button id='autoMapRun' class='btn btn-default'>Run</button>\
+        <button class='btn btn-danger' onclick=\"stopWalking('now')\">STOP!</button>\
+      </div>\
+      <div id='autoCommands' class='panel col-xs-12 col-lg-12' style='padding:10px;clear:left;margin-bottom:10px'>\
+        <p>Auto Commands</p>\
+        <p>Enter a command and frequency below. Seperate multiple commands with a comma. Toggle sending on/off with the checkbox.</p>\
+        <p>Send auto commands:\
+          <input type='checkbox' id='sendAutoCmds' onchange=\"autoCmdCheck('autoCmd','autoCmdDelay','sendAutoCmds')\")/>\
+        </p>\
+        <p>Command(s):\
+          <input type='text' id='autoCmd' style='width:200px' value='' />\
+        </p>\
+        <p>Delay (sec):\
+          <input type='number' id='autoCmdDelay' name = 'autoCmdDelay' min='1' value='6' style='width:50px;'/>\
+        </p>\
+      </div>\
     </div>\
 </div>\
 <div id='Path Management' class='panel col-xs-12 col-lg-8' style='padding:10px;float:left;margin-bottom:10px'>\
@@ -95,12 +101,12 @@ $("<div id='pathAndLoop' class='panel col-xs-12 col-lg-8' style='padding:10px;fl
     </p>\
   </div>\
 </div>\
-").insertAfter("#divExpTimer");
+").insertAfter('#divExpTimer');
 
 //Div for addon status
 $("<div id='addonStatus'>\
   <p>Addon Status: <label id=\"addonStatusText\"></label></p>\
-</div>").insertAfter("#mainScreen");
+</div>").insertAfter('#mainScreen');
 
 //Modal dialog for path import/export
 $("<div id='importExportDialog' class='modal fade' tabindex='-1' role='dialog' aria-labelledby='pathImportExport'>\
@@ -132,18 +138,18 @@ $("<div id='importExportDialog' class='modal fade' tabindex='-1' role='dialog' a
       </div>\
     </div>\
   </div>\
-</div>").insertAfter("#divCharacterSetup");
+</div>").insertAfter('#divCharacterSetup');
 
 //Map window
 $("<div id='divMap' class='panel col-xs-12 col-lg-4' style='padding:10px;float:left;margin-bottom:10px'>\
   <canvas id='mapCanvas' height='200' width='280'>Browser doesn't support canvas</canvas>\
   <div id='canvasControls' style='float:right'>\
-    <a href='#' id='saveMap'>Save</a><br />\
     <a href='#' id='resetMap'>Reset</a><br />\
-    <a href='#' class='button' id='exportMap' download='WebMUD_Map.png'>Download</a><br />\
+    <a href='#' id='mapImpExp' data-toggle='modal' data-target='#mapImpExpModal'>Im/Export</a><br />\
+    <a href='#' class='button' id='downloadMap'>Download</a><br />\
     <a href='#' id='configMap' data-toggle='modal' data-target='#mapOptions'>Configure</a>\
   </div>\
-</div>").insertAfter("#divHealth");
+</div>").insertAfter('#divHealth');
 
 //Mapping option modal
 $("<div class='modal fade' id='mapOptions' data-backdrop='false' tabindex='-1' role='dialog' aria-labelledby='mapOptions' aria-hidden='true' style='top:10%;right:0%;left:auto;bottom:auto;'>\
@@ -165,7 +171,7 @@ $("<div class='modal fade' id='mapOptions' data-backdrop='false' tabindex='-1' r
         </div>\
       </div>\
     </div>"
-).insertAfter("#divCharacterSetup");
+).insertAfter('#divCharacterSetup');
 
 //Mapping room edit modal
 $("<div class='modal fade' id='mapEdit' data-backdrop='false' tabindex='-1' role='dialog' aria-labelledby='mapEdit'>\
@@ -194,8 +200,32 @@ $("<div class='modal fade' id='mapEdit' data-backdrop='false' tabindex='-1' role
       </div>\
     </div>\
   </div> \
-").insertAfter("#divCharacterSetup");
+").insertAfter('#divCharacterSetup');
 
+//Mapping export modal
+$("<div class='modal fade' id='mapImpExpModal' data-backdrop='false' tabindex='-1' role='dialog' aria-labelledby='mapImpExpModal'>\
+    <div class='modal-dialog'>\
+      <div class='modal-content'>\
+        <div class='modal-header'>\
+          <button type='button' class='close' data-dismiss='modal' aria-label='Close'><span aria-hidden='true'>&times;</span></button>\
+          <h4 class='modal-title'>Import/Export Auto Map Rooms</h4>\
+        </div>\
+        <div class='modal-body'>\
+          <p>Use the buttons below to import and export the map. If you're importing, \
+          make sure to only use a good source because formatting is very important. Clicking \
+          export will prompt you to save a file after it is prepared.</p>\
+          <br />\
+          <textarea id='mapImpExpText' rows='5' cols='70' style='max-width:550px'></textarea>\
+        </div>\
+        <div class='modal-footer'>\
+          <button type='button' id='importMap' class='btn btn-success' style='float:left'>Import Map</button>\
+          <button type='button' id='exportMap' class='btn btn-success' style='float:left'>Export Map</button>\
+          <button type='button' class='btn btn-danger' data-dismiss='modal'>Close</button>\
+        </div>\
+      </div>\
+    </div>\
+  </div> \
+").insertAfter('#divCharacterSetup');
 
 //Constants used across many functions
 const START_PATH_SELECT_ID = 'startPathSelect';
@@ -205,7 +235,7 @@ const END_GROUP_SELECT_ID = 'endGroupSelect';
 const PATH_LIST = 'CustomPaths_';
 const GROUP_LIST = 'pathGroups_';
 const DB_NAME = 'webmud_addon';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 //Global variables used to manage player state
 let inCombat = false;
@@ -225,6 +255,7 @@ let map_size = 1000;
 let room_size = 10;
 let db;
 let curRoomID;
+let playerFollowing = false;
 
 
 /*****************************************************************************\
@@ -341,11 +372,13 @@ class GameMap {
     this.export = false;
 
     this._rooms = [];
+
+    this._lastMapRead = null;
   }
 
   move(movedFrom, actionData) {
-    let txn = db.transaction(['rooms'], 'readwrite');
-    let store = txn.objectStore('rooms');
+    //let txn = db.transaction(['rooms'], 'readwrite');
+    //let store = txn.objectStore('rooms');
     let data = Object.assign({}, actionData);
     let movingFrom = Object.assign({}, movedFrom);
     let movingTo;
@@ -361,7 +394,7 @@ class GameMap {
         movingTo = result;
         return Promise.resolve();
       })
-      .then(function(result) {
+      .then(function() {
         if (!movingTo) {
           return addRoom(data);
         } else {
@@ -369,21 +402,30 @@ class GameMap {
         }
       })
       .then(function(result) {
+        let mapUpdateNeeded = false;
         movingTo = result;
 
-        if (prevRoom.exits[movingFrom.dir] === -1) {
+        if (prevRoom.exits[movingFrom.dir] !== movingTo.id) {
           prevRoom.exits[movingFrom.dir] = movingTo.id;
+          mapUpdateNeeded = true;
         }
 
-        if (movingTo.exits[oppositeDir(movingFrom.dir)] === -1) {
+        if (movingTo.exits[oppositeDir(movingFrom.dir)] !== movingFrom.id) {
           movingTo.exits[oppositeDir(movingFrom.dir)] = movingFrom.id;
+          mapUpdateNeeded = true;
         }
 
-        updateRoom(prevRoom)
-          .then(function() { return updateRoom(movingTo); })
-          .then(function() {
-            return Promise.resolve(map.drawMap(ctx, room_size, map_size, actionData.RoomID));
-          });
+        if (mapUpdateNeeded) {
+          updateRoom(prevRoom)
+            .then(function() { return updateRoom(movingTo); })
+            .then(function() {
+              mapUpdateNeeded = false;
+              return Promise.resolve(map.drawMap(ctx, room_size, map_size, actionData.RoomID));
+            });
+        } else {
+          return Promise.resolve(map.drawMap(ctx, room_size, map_size, actionData.RoomID));
+        }
+
       })
       .catch(function(err) {
         console.error(err);
@@ -447,8 +489,7 @@ class GameMap {
 
         let exitId = lookup[parentId].exits[exit];
 
-        //set stroke and fill color for default room
-        ctx.fillStyle = 'black';
+        //set stroke for the default connector
         ctx.strokeStyle = 'white';
 
         //determine the x y coordinates for the draw based on direction
@@ -538,6 +579,20 @@ class GameMap {
 
           if (exitId === currentRoomID) {
             ctx.fillStyle = 'greenyellow';
+          } else {
+            ctx.fillStyle = 'black';
+          }
+
+          //give orange border if the rooms has an up or down exit
+          let exitCheck = lookup[exitId];
+          if ( exitCheck.exits.hasOwnProperty('u') || exitCheck.exits.hasOwnProperty('d') ) {
+            ctx.strokeStyle = 'orange';
+
+          } else if (exitCheck.altName && exitCheck.altName !== '') {
+            ctx.strokeStyle = 'lime';
+
+          } else {
+            ctx.strokeStyle = 'white';
           }
 
           ctx.rect(rx, ry, roomSize, roomSize);
@@ -571,20 +626,44 @@ class GameMap {
   }  //end draw method
 
   drawMap(ctx, roomSize, drawSize, currentRoomID) {
-    let txn = db.transaction(['rooms'], 'readonly');
-    let store = txn.objectStore('rooms');
 
-    store.getAll().onsuccess = function(event) {
-      this._rooms = event.target.result;
+    getLastWrite()
+      .then(result => {
+        if (result.stamp > this._lastMapRead || map.export) {
+          //local data is old, read the full database in
+          let txn = db.transaction(['rooms'], 'readonly');
+          let store = txn.objectStore('rooms');
 
-      this.draw(ctx, roomSize, drawSize, currentRoomID);
+          store.getAll().onsuccess = function(event) {
+            this._rooms = event.target.result;
+            this._lastMapRead = Date.now();
 
-      //export the map if the user requested it
-      if (map.export) {
-        document.getElementById('exportMap').href = ctx.canvas.toDataURL('image/png');
-        this.export = false;
-      }
-    }.bind(this);
+            this.draw(ctx, roomSize, drawSize, currentRoomID);
+
+            //export the map if the user requested it
+            if (map.export) {
+              let downloadLink = document.createElement('a');
+              downloadLink.target = '_blank';
+              downloadLink.href = ctx.canvas.toDataURL('image/png');
+              downloadLink.download = 'WebMud_Map.png';
+              document.body.appendChild(downloadLink);
+              downloadLink.click();
+              document.body.removeChild(downloadLink);
+
+              this.export = false;
+            }
+
+          }.bind(this);
+
+        } else {
+          //No need to re-read the database, just draw the map
+          this.draw(ctx, roomSize, drawSize, currentRoomID);
+        }
+
+      })
+      .catch(function(err) {
+        console.error(err);
+      });
   }
 
 
@@ -937,7 +1016,7 @@ function deleteSelectedPath(pathList, pathSelectId, groupList) {
   let pathToDelete = document.getElementById(pathSelectId).value;
   let groupListArray = localStorage.getItem(groupList).split(',');
 
-  let playerConfirm = window.confirm("Are you sure you want to delete " + pathToDelete + "?");
+  let playerConfirm = window.confirm('Are you sure you want to delete ' + pathToDelete + '?');
 
   if (playerConfirm) {
     removePathFromGroups(pathList, pathToDelete);
@@ -1095,7 +1174,6 @@ function exportPaths(pathList, groupList, exportType) {
 function storePath(pathKey, pathValue) {
   localStorage.setItem(pathKey, pathValue);
 }
-
 
 function clearAllPaths(pathList, groupList){
   let pathListArray = localStorage.getItem(pathList).split(',');
@@ -1302,7 +1380,7 @@ function deleteGroup(groupToDelete) {
   let i = groupListArray.length;
 
   //Ask the player if they're sure
-  let playerConfirm = window.confirm("Are you sure you want to delete " + groupToDelete + "?");
+  let playerConfirm = window.confirm('Are you sure you want to delete ' + groupToDelete + '?');
 
   if (playerConfirm) {
     //Loop through the array and remove the selected path
@@ -1516,27 +1594,43 @@ function openDatabase() {
   let request = indexedDB.open(DB_NAME, DB_VERSION);
 
   request.onerror = function(event) {
-    console.log('Could not open DB: ' + event.target.error);
+    console.error('Could not open DB: ' + event.target.error);
   };
 
   request.onupgradeneeded = function(event) {
     db = event.target.result;
 
-    if (db.objectStoreNames.contains('rooms')) {
-      db.deleteObjectStore('rooms');
+    //add the room store if it doesn't already exist
+    if (!db.objectStoreNames.contains('rooms')) {
+      let store = db.createObjectStore('rooms', { keyPath: 'id' });
+
+      store.createIndex('name', 'name', { unique: false });
+      store.createIndex('altName', 'altName', { unique: true });
+      store.createIndex('group', 'group', { unique: false });
     }
 
-    let store = db.createObjectStore('rooms', { keyPath: 'id' });
-
-    store.createIndex('name', 'name', { unique: false });
-    store.createIndex('altName', 'altName', { unique: true });
-    store.createIndex('group', 'group', { unique: false });
+    //add the update timestamp if it doens't already exist
+    if (!db.objectStoreNames.contains('status')) {
+      db.createObjectStore('status', { keyPath: 'id', autoIncrement: true });
+    }
 
   };  //end db upgrade
+
+  request.onblocked = (() => {
+    alert('The auto mapper needs to upgrade the database. Please close all other webmud windows so the addon can do the upgrade then reload this page.');
+
+    db.close();
+  });
 
   request.onsuccess = function(event) {
     console.log('DB Opened');
     db = event.target.result;
+
+    //database upgrade event
+    db.onversionchange = function() {
+      db.close();
+      alert('When the webmud addon was opened in another window, it updated the automap database. The automapper and autopaths will not work again until you reload the page and the addon.');
+    };
 
     reloadAutoSelectors();
 
@@ -1754,8 +1848,9 @@ function addRoom(actionData) {
   return new Promise(function(resolve, reject) {
     let trans = store.put(newRoom);
 
-    trans.onsuccess = function(event) {
+    trans.onsuccess = function() {
       reloadAutoSelectors();
+      updateLastWrite();
       resolve(newRoom);
     };
 
@@ -1782,6 +1877,7 @@ function updateRoom(room) {
     let trans = store.put(room);
 
     trans.onsuccess = function(event) {
+      updateLastWrite();
       resolve(event.target.result);
     };
 
@@ -1819,7 +1915,7 @@ function resetMap() {
   let txn = db.transaction(['rooms'], 'readwrite');
   let store = txn.objectStore('rooms');
 
-  store.clear().onsuccess = function(event) {
+  store.clear().onsuccess = function() {
     //clear the current map
     map = null;
     //show the room to load a new map
@@ -1828,7 +1924,7 @@ function resetMap() {
 
 }
 
-function exportMap() {
+function downloadMap() {
   if (map) {
     let exCanvas = document.createElement('canvas');
     exCanvas.width = 8000;
@@ -1837,6 +1933,7 @@ function exportMap() {
 
     map.export = true;
     map.drawMap(exCtx, room_size, map_size, curRoomID);
+    exCanvas = null;
   }
 }
 
@@ -1852,7 +1949,6 @@ function buildAutoPathMap() {
 
   let returnObject = {};
   let connectGraph = {};
-  let connections = {};
 
   return new Promise(function(resolve, reject) {
     let trans = store.getAll();
@@ -1922,7 +2018,7 @@ function findAutoPath(startID, endID) {
       .catch(function(err) {
         reject(Error(err));
       });
-    });
+  });
 }
 
 function reloadAutoSelectors() {
@@ -1943,7 +2039,7 @@ function reloadAutoSelectors() {
       autoGroupSelected('autoGroup', 'autoRoom', false);
     })
     .catch(function(err) {
-        console.error(err);
+      console.error(err);
     });
 }
 
@@ -2053,13 +2149,11 @@ function displayAutoPath() {
         });
     })
     .catch(function(err) {
-        console.error(err);
+      console.error(err);
     });
 }
 
-function autoMapGo(type) {
-  let start = curRoomID;
-  let end = document.getElementById('autoRoom').value;
+function autoMapGo(start, end, type) {
   let useAltName = checkAltName(end);
 
   getRoomByName(end, useAltName)
@@ -2090,7 +2184,7 @@ function autoMapGo(type) {
         });
     })
     .catch(function(err) {
-        console.error(err);
+      console.error(err);
     });
 }
 
@@ -2112,7 +2206,7 @@ function reloadAutoEditSel() {
       autoGroupSelected('mapGroupSel', 'mapRoomSel', true);
     })
     .catch(function(err) {
-        console.error(err);
+      console.error(err);
     });
 }
 
@@ -2127,7 +2221,7 @@ function mapRoomSelected() {
       loadRoomFields(roomDetail);
     })
     .catch(function(err) {
-        console.error(err);
+      console.error(err);
     });
 }
 
@@ -2170,7 +2264,7 @@ function editAutoRooms() {
       loadRoomFields(curRoomDetail);
     })
     .catch(function(err) {
-        console.error(err);
+      console.error(err);
     });
 }
 
@@ -2198,10 +2292,10 @@ function saveRoomEdits() {
       let room = new Room(id, name, exits, altName, group, commands, unlisted);
 
       updateRoom(room)
-        .then(function(result) {
+        .then(function() {
           alert('Room updated');
         })
-        .then(function(result) {
+        .then(function() {
           return reloadAutoEditSel();
         })
         .then(function() {
@@ -2209,7 +2303,7 @@ function saveRoomEdits() {
         });
     })
     .catch(function(err) {
-        console.error(err);
+      console.error(err);
     });
 
 }
@@ -2222,6 +2316,118 @@ function checkAltName(roomName) {
   }
 }
 
+function exportMap() {
+  //get all the map rooms then turn them into a json string and export
+  getAllRooms()
+    .then(function(result) {
+      let mapExport = JSON.stringify(result);
+
+      let exportLink = document.createElement('a');
+      exportLink.target = '_blank';
+      exportLink.href = 'data:text/plain,' + encodeURIComponent(mapExport);
+      exportLink.download = 'WebMud_Map_Export.txt';
+      document.body.appendChild(exportLink);
+      exportLink.click();
+      document.body.removeChild(exportLink);
+      //window.open(exportLink.href);
+
+      /*
+      let exportArea = document.getElementById('mapImpExpText');
+
+      exportArea.value = mapExport;
+      */
+    });
+}
+
+function importMap() {
+  let playerConfirm = window.confirm('This will update your current map, are you sure?');
+
+  if (playerConfirm) {
+    let mapString = document.getElementById('mapImpExpText').value;
+    let mapObjArray = [];
+
+    if (mapString && mapString !== '') {
+      try {
+
+        mapObjArray = JSON.parse(mapString);
+
+        //check the first room to see if it exists to verify parsing success
+        if ( mapObjArray[0].hasOwnProperty('id') ) {
+          for (let room of mapObjArray) {
+            updateRoom(room).then();
+          }
+
+          //show the room to load a new map
+          sendMessageDirect('');
+
+          //reload the group/room selectors then alert the player
+          reloadAutoSelectors();
+
+          alert('Import complete');
+
+        } else {
+          throw 'Error with parsing the map string provided';
+        }
+      }  //end try
+      catch (e) {
+        alert('An error with the import occured. Make sure the text provided is correct.');
+      }  //end catch
+    } //end if map
+  } //end player confirm
+} //end importMap function
+
+function updateLastWrite() {
+  let txn = db.transaction(['status'], 'readwrite');
+  let store = txn.objectStore('status');
+
+  let writeStamp = {
+    id: 'last write',
+    stamp: Date.now()
+  };
+
+  return new Promise( (resolve, reject) => {
+    let trans = store.put(writeStamp);
+
+    trans.onsuccess = function(event) {
+      resolve(event.target.result);
+    };
+
+    trans.onerror = function(event) {
+      reject(Error(event.target.error));
+    };
+  });
+}
+
+function getLastWrite() {
+  let txn = db.transaction(['status'], 'readonly');
+  let store = txn.objectStore('status');
+
+  return new Promise( (resolve, reject) => {
+    let trans = store.get('last write');
+
+    trans.onsuccess = function(event) {
+      let result = event.target.result;
+      if (result) {
+        resolve(event.target.result);
+      } else {
+
+        let writeStamp = {
+          id: 'last write',
+          stamp: Date.now()
+        };
+
+        resolve(writeStamp);
+      }
+
+    };
+
+    trans.onerror = function(event) {
+      reject(Error(event.target.error));
+    };
+  });
+}
+
+
 /*****************************************************************************\
 | General functions                                                           |
 \*****************************************************************************/
@@ -2229,7 +2435,7 @@ function checkAltName(roomName) {
 function notifyPlayer(msgColor, msgText) {
   //Used to alert the player by appending messages to the main window
   let status = document.getElementById('addonStatusText');
-  status.style = "color:" + msgColor;
+  status.style = 'color:' + msgColor;
   status.innerHTML = msgText;
 }
 
@@ -2489,9 +2695,12 @@ window.showRoom = function(actionData) {
   wm_showRoom(actionData);
   playerMoving = false;
 
-  if (movedFrom.hasOwnProperty('id') || !curRoomID) {
+  if (movedFrom.hasOwnProperty('id') || !curRoomID || playerFollowing) {
     //only update room id if player actually moved (not looked)
     curRoomID = actionData.RoomID;
+
+    //reset the follow flag
+    playerFollowing = false;
   }
 
   if (!map) {
@@ -2509,6 +2718,13 @@ window.showRoom = function(actionData) {
     }
 
   }
+};
+
+//If plalyer is looking vs moving, keep room ID the same
+let wm_followLeader = window.followLeader;
+window.followLeader = function(actionData) {
+  playerFollowing = true;
+  wm_followLeader(actionData);
 };
 
 //Note time of last combat swing to fix movement combat bug
@@ -2563,7 +2779,7 @@ window.updateHPMA = function(actionData) {
 };
 
 //event listener for the dialog modal
-document.getElementById('importExportDialog').addEventListener("click", function(e) {
+document.getElementById('importExportDialog').addEventListener('click', function(e) {
   switch (e.target.id) {
     case 'importPath':
       getPathsToImport('CustomPaths_', 'pathGroups_');
@@ -2591,7 +2807,7 @@ document.getElementById('importExportDialog').addEventListener("click", function
 },false);
 
 //event listener for the map options modal
-document.getElementById('mapOptions').addEventListener("click", function(e) {
+document.getElementById('mapOptions').addEventListener('click', function(e) {
   switch (e.target.id) {
     case 'applyMapOptions':
       map_size = parseInt(document.getElementById('mapSize').value);
@@ -2605,15 +2821,26 @@ document.getElementById('mapOptions').addEventListener("click", function(e) {
 },false);
 
 //event listener for the map
-document.getElementById('divMap').addEventListener("click", function(e) {
+document.getElementById('divMap').addEventListener('click', function(e) {
   switch (e.target.id) {
-    case 'saveMap':
-      saveMapToStorage();
-      notifyPlayer('green', 'Map successfully saved');
+    case 'downloadMap':
+      downloadMap();
       break;
 
     case 'resetMap':
       resetMap();
+      break;
+
+    default:
+
+  }
+},false);
+
+//event listener for the map import/export modal
+document.getElementById('mapImpExpModal').addEventListener('click', function(e) {
+  switch (e.target.id) {
+    case 'importMap':
+      importMap();
       break;
 
     case 'exportMap':
@@ -2626,18 +2853,19 @@ document.getElementById('divMap').addEventListener("click", function(e) {
 },false);
 
 //event listener for auto path
-document.getElementById('divAutoPath').addEventListener("click", function(e) {
+document.getElementById('divAutoPath').addEventListener('click', function(e) {
+  let end = document.getElementById('autoRoom').value;
   switch (e.target.id) {
     case 'editAutoRooms':
       editAutoRooms();
       break;
 
     case 'autoMapWalk':
-      autoMapGo('walk');
+      autoMapGo(curRoomID, end, 'walk');
       break;
 
     case 'autoMapRun':
-      autoMapGo('run');
+      autoMapGo(curRoomID, end, 'run');
       break;
 
     default:
@@ -2686,8 +2914,8 @@ $(document).keyup(function(e) {
       break;
 
     case 101:  //numpad 5
-    sendMessageDirect('sn');
-    $('#message').val('');
+      sendMessageDirect('sn');
+      $('#message').val('');
       break;
 
     case 102:  //numpad 6
@@ -2762,146 +2990,146 @@ SOFTWARE.
 
 var Graph = (function (undefined) {
 
-	var extractKeys = function (obj) {
-		var keys = [], key;
-		for (key in obj) {
-		    Object.prototype.hasOwnProperty.call(obj,key) && keys.push(key);  // jshint ignore:line
-		}
-		return keys;
-	};
+  var extractKeys = function(obj) {
+    var keys = [], key;
+    for (key in obj) {
+      Object.prototype.hasOwnProperty.call(obj,key) && keys.push(key);
+    }
+    return keys;
+  };
 
-	var sorter = function (a, b) {
-		return parseFloat (a) - parseFloat (b);
-	};
+  var sorter = function (a, b) {
+    return parseFloat (a) - parseFloat (b);
+  };
 
-	var findPaths = function (map, start, end, infinity) {
-		infinity = infinity || Infinity;
+  var findPaths = function (map, start, end, infinity) {
+    infinity = infinity || Infinity;
 
-		var costs = {},
-		    open = {'0': [start]},
-		    predecessors = {},
-		    keys;
+    var costs = {},
+      open = {'0': [start]},
+      predecessors = {},
+      keys;
 
-		var addToOpen = function (cost, vertex) {
-			var key = "" + cost;
-			if (!open[key]) open[key] = [];
-			open[key].push(vertex);
-		};
+    var addToOpen = function (cost, vertex) {
+      var key = '' + cost;
+      if (!open[key]) open[key] = [];
+      open[key].push(vertex);
+    };
 
-		costs[start] = 0;
+    costs[start] = 0;
 
-		while (open) {
-			if(!(keys = extractKeys(open)).length) break;
+    while (open) {
+      if(!(keys = extractKeys(open)).length) break;
 
-			keys.sort(sorter);
+      keys.sort(sorter);
 
-			var key = keys[0],
-			    bucket = open[key],
-			    node = bucket.shift(),
-			    currentCost = parseFloat(key),
-			    adjacentNodes = map[node] || {};
+      var key = keys[0],
+        bucket = open[key],
+        node = bucket.shift(),
+        currentCost = parseFloat(key),
+        adjacentNodes = map[node] || {};
 
-			if (!bucket.length) delete open[key];
+      if (!bucket.length) delete open[key];
 
-			for (var vertex in adjacentNodes) {
-			    if (Object.prototype.hasOwnProperty.call(adjacentNodes, vertex)) {
-					var cost = adjacentNodes[vertex],
-					    totalCost = cost + currentCost,
-					    vertexCost = costs[vertex];
+      for (var vertex in adjacentNodes) {
+        if (Object.prototype.hasOwnProperty.call(adjacentNodes, vertex)) {
+          var cost = adjacentNodes[vertex],
+            totalCost = cost + currentCost,
+            vertexCost = costs[vertex];
 
-					if ((vertexCost === undefined) || (vertexCost > totalCost)) {
-						costs[vertex] = totalCost;
-						addToOpen(totalCost, vertex);
-						predecessors[vertex] = node;
-					}
-				}
-			}
-		}
+          if ((vertexCost === undefined) || (vertexCost > totalCost)) {
+            costs[vertex] = totalCost;
+            addToOpen(totalCost, vertex);
+            predecessors[vertex] = node;
+          }
+        }
+      }
+    }
 
-		if (costs[end] === undefined) {
-			return null;
-		} else {
-			return predecessors;
-		}
+    if (costs[end] === undefined) {
+      return null;
+    } else {
+      return predecessors;
+    }
 
-	};
+  };
 
-	var extractShortest = function (predecessors, end) {
-		var nodes = [],
-		    u = end;
+  var extractShortest = function (predecessors, end) {
+    var nodes = [],
+      u = end;
 
-		while (u) {
-			nodes.push(u);
-			u = predecessors[u];
-		}
+    while (u) {
+      nodes.push(u);
+      u = predecessors[u];
+    }
 
-		nodes.reverse();
-		return nodes;
-	};
+    nodes.reverse();
+    return nodes;
+  };
 
-	var findShortestPath = function (map, nodes) {
-		var start = nodes.shift(),
-		    end,
-		    predecessors,
-		    path = [],
-		    shortest;
+  var findShortestPath = function (map, nodes) {
+    var start = nodes.shift(),
+      end,
+      predecessors,
+      path = [],
+      shortest;
 
-		while (nodes.length) {
-			end = nodes.shift();
-			predecessors = findPaths(map, start, end);
+    while (nodes.length) {
+      end = nodes.shift();
+      predecessors = findPaths(map, start, end);
 
-			if (predecessors) {
-				shortest = extractShortest(predecessors, end);
-				if (nodes.length) {
-					path.push.apply(path, shortest.slice(0, -1));
-				} else {
-					return path.concat(shortest);
-				}
-			} else {
-				return null;
-			}
+      if (predecessors) {
+        shortest = extractShortest(predecessors, end);
+        if (nodes.length) {
+          path.push.apply(path, shortest.slice(0, -1));
+        } else {
+          return path.concat(shortest);
+        }
+      } else {
+        return null;
+      }
 
-			start = end;
-		}
-	};
+      start = end;
+    }
+  };
 
-	var toArray = function (list, offset) {
-		try {
-			return Array.prototype.slice.call(list, offset);
-		} catch (e) {
-			var a = [];
-			for (var i = offset || 0, l = list.length; i < l; ++i) {
-				a.push(list[i]);
-			}
-			return a;
-		}
-	};
+  var toArray = function (list, offset) {
+    try {
+      return Array.prototype.slice.call(list, offset);
+    } catch (e) {
+      var a = [];
+      for (var i = offset || 0, l = list.length; i < l; ++i) {
+        a.push(list[i]);
+      }
+      return a;
+    }
+  };
 
-	var Graph = function (map) {
-		this.map = map;
-	};
+  var Graph = function (map) {
+    this.map = map;
+  };
 
-	Graph.prototype.findShortestPath = function (start, end) {
-		if (Object.prototype.toString.call(start) === '[object Array]') {
-			return findShortestPath(this.map, start);
-		} else if (arguments.length === 2) {
-			return findShortestPath(this.map, [start, end]);
-		} else {
-			return findShortestPath(this.map, toArray(arguments));
-		}
-	};
+  Graph.prototype.findShortestPath = function (start, end) {
+    if (Object.prototype.toString.call(start) === '[object Array]') {
+      return findShortestPath(this.map, start);
+    } else if (arguments.length === 2) {
+      return findShortestPath(this.map, [start, end]);
+    } else {
+      return findShortestPath(this.map, toArray(arguments));
+    }
+  };
 
-	Graph.findShortestPath = function (map, start, end) {
-		if (Object.prototype.toString.call(start) === '[object Array]') {
-			return findShortestPath(map, start);
-		} else if (arguments.length === 3) {
-			return findShortestPath(map, [start, end]);
-		} else {
-			return findShortestPath(map, toArray(arguments, 1));
-		}
-	};
+  Graph.findShortestPath = function (map, start, end) {
+    if (Object.prototype.toString.call(start) === '[object Array]') {
+      return findShortestPath(map, start);
+    } else if (arguments.length === 3) {
+      return findShortestPath(map, [start, end]);
+    } else {
+      return findShortestPath(map, toArray(arguments, 1));
+    }
+  };
 
-	return Graph;
+  return Graph;
 
 })();
 
@@ -2910,8 +3138,8 @@ var Graph = (function (undefined) {
 | Jaeger's Combat Stats Watcher                                               |
 \*****************************************************************************/
 var JaegerWM;
-(function (JaegerWM) {
-    var CombatStatsWatcher = (function () {
+(function(JaegerWM) {
+    var CombatStatsWatcher = (function() {
         function CombatStatsWatcher() {
             var _this = this;
             this.swingCount = 0;
@@ -2930,7 +3158,9 @@ var JaegerWM;
             this.roundStart = Date.now();
             this.inRound = false;
             this.wmCombatSwing = combatSwing;
-            combatSwing = function (actionData) { _this.combatSwingOverride(actionData); };
+            combatSwing = function(actionData) {
+                _this.combatSwingOverride(actionData);
+            };
             $('#divExpTimer table tr:last').before('<tr>' +
                 '<td>Round Damage (SPR):</td>' +
                 '<td><span id="roundStats">0 (0)</span></td>' +
@@ -2959,15 +3189,15 @@ var JaegerWM;
                 '<td>Glance Percentage:</td>' +
                 '<td><span id="glanceStats">0.00 %</span></td>' +
                 '</tr>');
-            $('#btnResetExpTimer').click(function () {
+            $('#btnResetExpTimer').click(function() {
                 _this.resetCombatStats();
             });
-            setInterval(function () {
+            setInterval(function() {
                 _this.setStatsUI();
             }, 2000);
         }
         Object.defineProperty(CombatStatsWatcher.prototype, "roundDamageAvg", {
-            get: function () {
+            get: function() {
                 if (this.roundCount === 0)
                     return "0";
                 return Math.round((this.hitDamage + this.critDamage) / this.roundCount).toString();
@@ -2976,7 +3206,7 @@ var JaegerWM;
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "swingsPerRound", {
-            get: function () {
+            get: function() {
                 if (this.roundCount === 0)
                     return "0";
                 return Math.round(this.swingCount / this.roundCount).toString();
@@ -2985,14 +3215,14 @@ var JaegerWM;
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "hitPercent", {
-            get: function () {
+            get: function() {
                 return this.getPercent(this.hitCount, this.swingCount);
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "hitDamageAvg", {
-            get: function () {
+            get: function() {
                 if (this.hitCount === 0)
                     return "0";
                 return Math.round(this.hitDamage / this.hitCount).toString();
@@ -3001,14 +3231,14 @@ var JaegerWM;
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "bsPercent", {
-            get: function () {
+            get: function() {
                 return this.getPercent(this.bsCount, this.bsAttempt);
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "bsDamageAvg", {
-            get: function () {
+            get: function() {
                 if (this.bsCount === 0)
                     return "0";
                 return Math.round(this.bsDamage / this.bsCount).toString();
@@ -3017,14 +3247,14 @@ var JaegerWM;
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "critPercent", {
-            get: function () {
+            get: function() {
                 return this.getPercent(this.critCount, this.swingCount);
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "critDamageAvg", {
-            get: function () {
+            get: function() {
                 if (this.critCount === 0)
                     return "0";
                 return Math.round(this.critDamage / this.critCount).toString();
@@ -3033,27 +3263,27 @@ var JaegerWM;
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "missPercent", {
-            get: function () {
+            get: function() {
                 return this.getPercent(this.missCount, this.swingCount);
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "dodgePercent", {
-            get: function () {
+            get: function() {
                 return this.getPercent(this.dodgeCount, this.swingsAtYouCount);
             },
             enumerable: true,
             configurable: true
         });
         Object.defineProperty(CombatStatsWatcher.prototype, "glancePercent", {
-            get: function () {
+            get: function() {
                 return this.getPercent(this.glanceCount, this.swingsAtYouCount);
             },
             enumerable: true,
             configurable: true
         });
-        CombatStatsWatcher.prototype.setStatsUI = function () {
+        CombatStatsWatcher.prototype.setStatsUI = function() {
             $('#roundStats').text(this.roundDamageAvg + " (" + this.swingsPerRound + " SPR)");
             $('#hitStats').text(this.hitDamageAvg + " (" + this.hitPercent + " %)");
             $('#bsStats').text(this.bsDamageAvg + " (" + this.bsPercent + " %)");
@@ -3062,7 +3292,7 @@ var JaegerWM;
             $('#dodgeStats').text(this.dodgePercent + " %");
             $('#glanceStats').text(this.glancePercent + " %");
         };
-        CombatStatsWatcher.prototype.resetCombatStats = function () {
+        CombatStatsWatcher.prototype.resetCombatStats = function() {
             this.swingCount = 0;
             this.hitCount = 0;
             this.hitDamage = 0;
@@ -3077,7 +3307,7 @@ var JaegerWM;
             this.glanceCount = 0;
             this.roundCount = 0;
         };
-        CombatStatsWatcher.prototype.combatSwingOverride = function (actionData) {
+        CombatStatsWatcher.prototype.combatSwingOverride = function(actionData) {
             this.wmCombatSwing(actionData);
             if (actionData.AttackerID === playerID) {
                 var now = Date.now();
@@ -3088,8 +3318,7 @@ var JaegerWM;
                 }
                 if (actionData.Surprise) {
                     this.bsAttempt++;
-                }
-                else {
+                } else {
                     this.swingCount++;
                 }
                 switch (actionData.SwingResult) {
@@ -3097,8 +3326,7 @@ var JaegerWM;
                         if (actionData.Surprise) {
                             this.bsCount++;
                             this.bsDamage += actionData.Damage;
-                        }
-                        else {
+                        } else {
                             this.hitCount++;
                             this.hitDamage += actionData.Damage;
                         }
@@ -3111,8 +3339,7 @@ var JaegerWM;
                         this.missCount++;
                         break;
                 }
-            }
-            else if (actionData.TargetID === playerID) {
+            } else if (actionData.TargetID === playerID) {
                 this.inRound = false;
                 this.swingsAtYouCount++;
                 switch (actionData.SwingResult) {
@@ -3123,12 +3350,11 @@ var JaegerWM;
                         this.glanceCount++;
                         break;
                 }
-            }
-            else {
+            } else {
                 this.inRound = false;
             }
         };
-        CombatStatsWatcher.prototype.getPercent = function (count, total) {
+        CombatStatsWatcher.prototype.getPercent = function(count, total) {
             return total === 0 ? "0.00" : ((count / total) * 100).toFixed(2);
         };
         return CombatStatsWatcher;
@@ -3137,6 +3363,6 @@ var JaegerWM;
 })(JaegerWM || (JaegerWM = {}));
 
 let statsWatcher;
-setTimeout(function(){
+setTimeout(function() {
     statsWatcher = new JaegerWM.CombatStatsWatcher();
 }, 2000);
