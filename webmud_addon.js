@@ -145,9 +145,13 @@ $("<div id='divMap' class='panel col-xs-12 col-lg-4' style='padding:10px;float:l
   <canvas id='mapCanvas' height='200' width='280'>Browser doesn't support canvas</canvas>\
   <div id='canvasControls' style='float:right'>\
     <a href='#' id='resetMap'>Reset</a><br />\
-    <a href='#' id='mapImpExp' data-toggle='modal' data-target='#mapImpExpModal'>Im/Export</a><br />\
+    <a href='#' id='importMap'>Import</a><br />\
+    <input type='file' id='importFileBrowse' style='display:none'>\
+    <a href='#' id='exportMap'>Export</a><br />\
     <a href='#' class='button' id='downloadMap'>Download</a><br />\
     <a href='#' id='configMap' data-toggle='modal' data-target='#mapOptions'>Configure</a>\
+    <br /><br />\
+    <a href='#' id='bigMap'>Big Map</a><br />\
   </div>\
 </div>").insertAfter('#divHealth');
 
@@ -195,6 +199,7 @@ $("<div class='modal fade' id='mapEdit' data-backdrop='false' tabindex='-1' role
         </div>\
         <div class='modal-footer'>\
           <button type='button' id='applyMapEdits' class='btn btn-success'>Save</button>\
+          <button type='button' id='deleteRoom' class='btn btn-danger'>Delete Room</button>\
           <button type='button' class='btn btn-danger' data-dismiss='modal'>Close</button>\
         </div>\
       </div>\
@@ -251,7 +256,7 @@ let curPlayer;
 let map;
 let movedFrom = {};
 let ctx;
-let map_size = 1000;
+let map_size = 999999;
 let room_size = 10;
 let db;
 let curRoomID;
@@ -370,10 +375,23 @@ class GameMap {
     }
 
     this.export = false;
-
     this._rooms = [];
-
     this._lastMapRead = null;
+    this._lastMapDraw = {};
+
+    //variables used for the big map
+    this._bigMapWin = null;
+    this._mouseDrag = false;
+    this._mouseStartX;
+    this._mouseStartY;
+
+    //variables used to track new x + y variables for map dragging
+    this._ox = 0;
+    this._oy = 0;
+    //last draw ox + oy to track the drag delta
+    this._lx = 0;
+    this._ly = 0;
+
   }
 
   move(movedFrom, actionData) {
@@ -433,8 +451,17 @@ class GameMap {
   }
 
   draw(ctx, roomSize, drawSize, currentRoomID) {
-    let x = (ctx.canvas.width / 2) - (roomSize / 2);
-    let y = (ctx.canvas.height / 2) - (roomSize / 2);
+    let x;
+    let y;
+
+    if (this._bigMapWin) {
+      x = this._ox;
+      y = this._oy;
+    } else {
+      x = (ctx.canvas.width / 2) - (roomSize / 2);
+      y = (ctx.canvas.height / 2) - (roomSize / 2);
+    }
+
     let roomQueue  = [];
     let roomsToDraw = drawSize;
     let drawn = [];
@@ -488,9 +515,6 @@ class GameMap {
         let ry = y;
 
         let exitId = lookup[parentId].exits[exit];
-
-        //set stroke for the default connector
-        ctx.strokeStyle = 'white';
 
         //determine the x y coordinates for the draw based on direction
         switch (exit) {
@@ -568,6 +592,15 @@ class GameMap {
 
         }
 
+        //set the stroke color for the connector
+        if (exitId === -1) {
+          ctx.strokeStyle = 'red';
+          ctx.lineWidth = 3;
+        } else {
+          ctx.strokeStyle = 'white';
+          ctx.lineWidth = 1;
+        }
+
         //draw connector
         ctx.beginPath();
         ctx.moveTo(scx,scy);
@@ -579,8 +612,10 @@ class GameMap {
 
           if (exitId === currentRoomID) {
             ctx.fillStyle = 'greenyellow';
+            ctx.lineWidth = 1;
           } else {
             ctx.fillStyle = 'black';
+            ctx.lineWidth = 1;
           }
 
           //give orange border if the rooms has an up or down exit
@@ -598,6 +633,13 @@ class GameMap {
           ctx.rect(rx, ry, roomSize, roomSize);
           ctx.fill();
           ctx.stroke();
+
+          this._lastMapDraw[exitId] = {
+            'name': lookup[exitId].name,
+            'altName': lookup[exitId].altName,
+            'pos': { 'x': rx, 'y':ry },
+            'size': roomSize
+          };
 
           //add connected room to the drawing queue except if it's an exit
           //that changes z plane or if it's already been drawn
@@ -626,6 +668,7 @@ class GameMap {
   }  //end draw method
 
   drawMap(ctx, roomSize, drawSize, currentRoomID) {
+    this._lastMapDraw = {};
 
     getLastWrite()
       .then(result => {
@@ -666,7 +709,190 @@ class GameMap {
       });
   }
 
+  startBigMap() {
+    this._bigMapWin = window.open('', 'map');
 
+    this._bigMapWin.document.open();
+    this._bigMapWin.document.write("<link href='http://webmud.com/Content/css' rel='stylesheet'/><canvas id='bigMapCanvas'></canvas><p><div><div style='float:left'><div style='margin:0 auto'>Click and drag to move the map.<br />Hover over a room for detail<br />Shift+click a room to walk to that room.<br />Shift+right_click to run to that room<br />Scroll to zoom in/out<br />Right click to re-center the map</div></div><div style='margin:0 auto; width:50%'><span id='bigName'></span><br /><span id='bigAltName'></span></div></div></p>");
+    this._bigMapWin.document.close();
+
+    //blank the old map so the user doesn't get confused
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+    //set the global ctx variable so that the big map is drawn on move
+    ctx = this._bigMapWin.document.getElementById('bigMapCanvas').getContext('2d');
+
+    //event listeners for the canvas
+    ctx.canvas.addEventListener('mousemove', (evt => {
+      let mousePos = this._getMousePos(ctx.canvas, evt);
+
+      if (this._mouseDrag) {
+        if (mousePos.x >= this._mouseStartX) {
+          this._ox += (mousePos.x - this._mouseStartX);
+        } else {
+          this._ox -= (this._mouseStartX - mousePos.x);
+        }
+
+        if (mousePos.y >= this._mouseStartY) {
+          this._oy += (mousePos.y - this._mouseStartY);
+
+        } else {
+          this._oy -= (this._mouseStartY - mousePos.y);
+        }
+
+        this._mouseStartX = mousePos.x;
+        this._mouseStartY = mousePos.y;
+
+        const xDelt = Math.abs(this._ox - this._lx);
+        const yDelt = Math.abs(this._oy - this._ly);
+
+        if (xDelt >= 2 || yDelt >= 2) {
+          this._lx = this._ox;
+          this._ly = this._oy;
+          this.drawMap(ctx, room_size, map_size, curRoomID);
+        }
+
+
+      } else {
+        //if not dragging, do mouseover text
+        let room = this._lastMapDraw[this._getMapRoom(mousePos)];
+        let outputName = this._bigMapWin.document.getElementById('bigName');
+        let outputAltName = this._bigMapWin.document.getElementById('bigAltName');
+
+        if (room) {
+          outputName.innerHTML = 'Room Name: ' + room.name;
+          outputAltName.innerHTML = 'Alt Name: ' + room.altName;
+        } else {
+          outputName.innerHTML = '';
+          outputAltName.innerHTML = '';
+        }
+
+
+      }
+    }), false);
+
+    ctx.canvas.addEventListener('mousedown', (evt => {
+      let mousePos = this._getMousePos(ctx.canvas, evt);
+      this._mouseDrag = true;
+
+      this._mouseStartX = mousePos.x;
+      this._mouseStartY = mousePos.y;
+    }), false);
+
+    ctx.canvas.addEventListener('mouseup', (() => {
+      this._mouseDrag = false;
+    }), false);
+
+    this._bigMapWin.addEventListener('resize', (evt => {
+      let win = evt.target;
+      let canvas = ctx.canvas;
+
+      canvas.width = win.innerWidth - (win.innerWidth * .02);
+      canvas.height = win.innerHeight - (win.innerHeight * .2);
+
+      this._ox = (canvas.width / 2) - (room_size / 2);
+      this._oy = (canvas.height / 2) - (room_size / 2);
+
+      this.drawMap(ctx, room_size, map_size, curRoomID);
+    }), false);
+
+    this._bigMapWin.addEventListener('beforeunload', (() => {
+      //reset room size
+      room_size = parseInt(document.getElementById('roomSize').value);
+
+      document.getElementById('divMap').hidden = false;
+      ctx = document.getElementById('mapCanvas').getContext('2d');
+
+      this._ox = (ctx.canvas.width / 2) - (room_size / 2);
+      this._oy = (ctx.canvas.height / 2) - (room_size / 2);
+
+      this.drawMap(ctx, room_size, map_size, curRoomID);
+    }), false);
+
+    this._bigMapWin.addEventListener('contextmenu', (evt => {
+      evt.preventDefault();
+      this._handleMapClick(evt);
+    }), false);
+
+    this._bigMapWin.addEventListener('click', (evt => {
+      evt.preventDefault();
+      this._handleMapClick(evt);
+    }), false);
+
+    this._bigMapWin.addEventListener('wheel', (evt => {
+      evt.preventDefault();
+
+      if (evt.deltaY < 0) {
+        room_size += 1;
+      } else if (evt.deltaY > 0 && room_size > 2) {
+        room_size -= 1;
+      }
+
+      this.drawMap(ctx, room_size, map_size, curRoomID);
+    }), false);
+
+  } //end startBigMap
+
+  _handleMapClick(event) {
+    const clickPos = this._getMousePos(ctx.canvas, event);
+    const dest = this._getMapRoom(clickPos);
+
+    if (event.shiftKey) {
+      let type;
+
+      //set the walk type based on the mouse button used
+      if (event.button === 0) {
+        //left click
+        type = 'walk';
+      } else if (event.button === 2) {
+        //right click
+        type = 'run';
+      }
+
+      if (dest) {
+        getRoom(dest)
+          .then(result => {
+            autoMapGo(curRoomID, dest, result.name, type);
+          })
+          .catch(err => {
+            console.error(err);
+          });
+      }
+
+    } else if (event.button === 2 && !event.shiftKey) {
+      //right click without shift modifier resets draw position
+      this._ox = (ctx.canvas.width / 2) - (room_size / 2);
+      this._oy = (ctx.canvas.height / 2) - (room_size / 2);
+
+      this.drawMap(ctx, room_size, map_size, curRoomID);
+    }
+
+  }
+  _getMapRoom(clickPos) {
+    for (let room in this._lastMapDraw) {
+      const minX = this._lastMapDraw[room].pos.x;
+      const maxX = this._lastMapDraw[room].pos.x + room_size;
+      const minY = this._lastMapDraw[room].pos.y;
+      const maxY = this._lastMapDraw[room].pos.y + room_size;
+
+      if (clickPos.x > minX && clickPos.x < maxX &&
+          clickPos.y > minY && clickPos.y < maxY) {
+
+        return room;
+      }
+    }
+
+    return false;
+  }
+
+  _getMousePos(canvas, evt) {
+    let rect = canvas.getBoundingClientRect();
+    return {
+      x: evt.clientX - rect.left,
+      y: evt.clientY - rect.top
+    };
+
+  }
 }  //end Map class
 
 class Room {
@@ -905,20 +1131,20 @@ function walkPath(path, stepDelay, loopPath, selectedPath) {
       if ( (resting || meditating) && playerResting === false ) {
         sendMessageDirect('break');
       }
-      /*
+
       //failsafe for when the AI doesn't properly break after party running
-      if (aiRunning) {
+      if (aiRunning && partyInfo) {
         let memberResting = false;
         sendMessageDirect('par');
         //check to see if any of the party members are resting
         for (let member of partyInfo) {
-          if (member.HPPercent < 100 || memberResting) {
+          if (member.HPPercent < 95 || memberResting) {
             memberResting = true;
           }
         }
         aiRunning = memberResting;
       }
-      */
+
     }
   }, stepDelay);
 }
@@ -934,6 +1160,7 @@ function* genFunc(passedArr) {
 
 function stopWalking(whenToStop) {
   stopWalkingFlag = whenToStop;
+  combatEnd();
 
   notifyPlayer('yellow', 'Stop walking selected, will stop walking: ' + whenToStop);
 }
@@ -1932,7 +2159,8 @@ function downloadMap() {
     let exCtx = exCanvas.getContext('2d');
 
     map.export = true;
-    map.drawMap(exCtx, room_size, map_size, curRoomID);
+    //draw size is set to 999,999 for the export so all rooms are drawn
+    map.drawMap(exCtx, room_size, 999999, curRoomID);
     exCanvas = null;
   }
 }
@@ -2153,39 +2381,51 @@ function displayAutoPath() {
     });
 }
 
-function autoMapGo(start, end, type) {
-  let useAltName = checkAltName(end);
-
-  getRoomByName(end, useAltName)
+function autoMapGo(start, end, endName, type) {
+  findAutoPath(start, end)
     .then(function(result) {
-      end = result.id;
+      let pathString = result;
+      let steps = pathString.split(',').length;
+      let delay = document.getElementById('stepDelay').value;
+      let dest = 'AutoMap walk to ' + endName;
 
-      findAutoPath(start, end)
-        .then(function(result) {
-          let pathString = result;
-          let steps = pathString.split(',').length;
-          let delay = document.getElementById('stepDelay').value;
-          let dest = 'AutoMap walk to ' + document.getElementById('autoRoom').value;
+      if (pathString) {
+        notifyPlayer('yellowgreen', dest + ' (' + steps + ' steps)');
 
-          if (pathString) {
-            notifyPlayer('yellowgreen', dest + ' (' + steps + ' steps)');
+        if (type === 'run') {
+          sendMessageDirect('DisableAI Combat');
+          document.getElementById('chkAICombat').checked = false;
+        }
 
-            if (type === 'run') {
-              sendMessageDirect('DisableAI Combat');
-              document.getElementById('chkAICombat').checked = false;
-            }
+        walkPath(pathString, delay, false, dest);
 
-            walkPath(pathString, delay, false, dest);
-
-          } else {
-            let displayString = 'No path found to destination room';
-            notifyPlayer('yellow', displayString);
-          }
-        });
+      } else {
+        let displayString = 'No path found to destination room';
+        notifyPlayer('yellow', displayString);
+      }
     })
     .catch(function(err) {
       console.error(err);
     });
+}
+
+function autoMapMoveByName(start, endName, type) {
+  let useAltName = checkAltName(endName);
+
+  getRoomByName(endName, useAltName)
+    .then(function(result) {
+      let end = result.id;
+
+      if (useAltName) {
+        endName = result.altName;
+      }
+
+      autoMapGo(start, end, endName, type);
+    })
+    .catch(function(err) {
+      console.error(err);
+    });
+
 }
 
 function reloadAutoEditSel() {
@@ -2308,6 +2548,42 @@ function saveRoomEdits() {
 
 }
 
+function deleteRoomById(id) {
+  let txn = db.transaction(['rooms'], 'readwrite');
+  let store = txn.objectStore('rooms');
+
+  let trans = store.delete(id);
+
+  return new Promise(function(resolve, reject) {
+    trans.onsuccess = function(event) {
+      updateLastWrite();
+      resolve(event.target.result);
+    };
+
+    trans.onerror = function(event) {
+      reject(Error(event.target.error));
+    };
+  });
+}
+
+function deleteAutoRoom(id) {
+  deleteRoomById(id)
+    .then(function() {
+      alert('Room Deleted');
+    })
+    .then(function() {
+      return reloadAutoEditSel();
+    })
+    .then(function() {
+      reloadAutoSelectors();
+      //send an enter to re-add the room
+      sendMessageDirect('');
+    })
+    .catch(function(err) {
+      console.error(err);
+    });
+}
+
 function checkAltName(roomName) {
   if (roomName.slice(-1) === '_') {
     return true;
@@ -2339,40 +2615,64 @@ function exportMap() {
     });
 }
 
-function importMap() {
+function importMapFromFile(event) {
+  let file = event.target.files[0];
+
+  if (file.type.match('text/plain')) {
+    let reader = new FileReader();
+
+    //read data from file in as text
+    reader.readAsText(file);
+
+    //once the file is loaded, process it
+    reader.onload = (evt => {
+      let data = evt.target.result;
+      let mapParse;
+
+      //verify the file contents are valid JSON
+      try {
+        mapParse = JSON.parse(data);
+
+      } catch (err) {
+
+        console.error(err);
+        alert('The selected file did not contain a valid map export.');
+        return false;
+      }
+
+      //now that we know the file is valid, import it
+      importMap(mapParse);
+    });
+
+  } else {
+    alert('Invalid file selected');
+  }
+
+}
+
+function importMap(mapData) {
   let playerConfirm = window.confirm('This will update your current map, are you sure?');
 
   if (playerConfirm) {
-    let mapString = document.getElementById('mapImpExpText').value;
-    let mapObjArray = [];
+    //check the first room to see if it exists to verify parsing success
+    if ( mapData[0].hasOwnProperty('id') ) {
+      for (let room of mapData) {
+        updateRoom(room).then();
+      }
 
-    if (mapString && mapString !== '') {
-      try {
+      //show the room to load a new map
+      sendMessageDirect('');
 
-        mapObjArray = JSON.parse(mapString);
+      //reload the group/room selectors then alert the player
+      reloadAutoSelectors();
 
-        //check the first room to see if it exists to verify parsing success
-        if ( mapObjArray[0].hasOwnProperty('id') ) {
-          for (let room of mapObjArray) {
-            updateRoom(room).then();
-          }
+      alert('Import complete');
 
-          //show the room to load a new map
-          sendMessageDirect('');
+    } else {
 
-          //reload the group/room selectors then alert the player
-          reloadAutoSelectors();
+      alert('The selected file did not contain a valid map export.');
 
-          alert('Import complete');
-
-        } else {
-          throw 'Error with parsing the map string provided';
-        }
-      }  //end try
-      catch (e) {
-        alert('An error with the import occured. Make sure the text provided is correct.');
-      }  //end catch
-    } //end if map
+    }//end map validity check
   } //end player confirm
 } //end importMap function
 
@@ -2677,6 +2977,7 @@ window.gainExperience = function(actionData) {
 let wm_playerMove = window.playerMove;
 window.playerMove = function(actionData) {
   wm_playerMove(actionData);
+  movedFrom = {};
 
   if (actionData.Result === 1 || actionData.Result === 2) {
     playerMoving = true;
@@ -2701,6 +3002,11 @@ window.showRoom = function(actionData) {
 
     //reset the follow flag
     playerFollowing = false;
+  }
+
+  //check to workaround a webmud bug with players being too heavy
+  if (movedFrom.id === curRoomID) {
+    movedFrom = {};
   }
 
   if (!map) {
@@ -2831,10 +3137,28 @@ document.getElementById('divMap').addEventListener('click', function(e) {
       resetMap();
       break;
 
+    case 'importMap':
+      document.getElementById('importFileBrowse').click();
+      break;
+
+    case 'exportMap':
+      exportMap();
+      break;
+
+    case 'bigMap':
+      document.getElementById('divMap').hidden = true;
+      map.startBigMap();
+      break;
+
     default:
 
   }
 },false);
+
+//event listener for the import map file picker
+document.getElementById('importFileBrowse').addEventListener('change', (e => {
+  importMapFromFile(e);
+}));
 
 //event listener for the map import/export modal
 document.getElementById('mapImpExpModal').addEventListener('click', function(e) {
@@ -2861,11 +3185,11 @@ document.getElementById('divAutoPath').addEventListener('click', function(e) {
       break;
 
     case 'autoMapWalk':
-      autoMapGo(curRoomID, end, 'walk');
+      autoMapMoveByName(curRoomID, end, 'walk');
       break;
 
     case 'autoMapRun':
-      autoMapGo(curRoomID, end, 'run');
+      autoMapMoveByName(curRoomID, end, 'run');
       break;
 
     default:
@@ -2875,9 +3199,15 @@ document.getElementById('divAutoPath').addEventListener('click', function(e) {
 
 //event listener for map edit
 document.getElementById('mapEdit').addEventListener('click', function(e) {
+  let id = document.getElementById('mapId').value;
+
   switch (e.target.id) {
     case 'applyMapEdits':
       saveRoomEdits();
+      break;
+
+    case 'deleteRoom':
+      deleteAutoRoom(id);
       break;
 
     default:
