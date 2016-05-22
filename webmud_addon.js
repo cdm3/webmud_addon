@@ -35,7 +35,7 @@ $("<div id='pathAndLoop' class='panel col-xs-12 col-lg-8' style='padding:10px;fl
     <div class='panel col-xs-12 col-lg-6' style='padding:10px;float:left;margin-bottom:10px'>\
       <div id='divAutoPath' class='panel col-xs-12 col-lg-12' style='padding:10px;float:left;margin-bottom:10px'>\
         <p>AutoMap Path, Select Destination \
-        <a href='#' id='editAutoRooms' data-toggle='modal' data-target='#mapEdit'>(edit rooms)</a>\</p>\
+        <a href='#' id='editAutoRooms' data-toggle='modal' data-target='#mapEdit'>(edit map)</a>\</p>\
         Group: <select id='autoGroup' onchange=\"autoGroupSelected('autoGroup', 'autoRoom', false)\" onfocus=\"autoGroupSelected('autoGroup', 'autoRoom', false)\" style='width:250px;'></select>\
         <br />Room: <select id='autoRoom' onchange='displayAutoPath()' onfocus='displayAutoPath()' style='width:250px;'></select>\
         <br />\
@@ -375,15 +375,19 @@ class GameMap {
     }
 
     this.export = false;
-    this._rooms = [];
+    this._rooms = {};
     this._lastMapRead = null;
     this._lastMapDraw = {};
 
     //variables used for the big map
     this._bigMapWin = null;
     this._mouseDrag = false;
+    //track the starting position for a mouse drag
     this._mouseStartX;
     this._mouseStartY;
+    //Track if the map is drawing a different z
+    this._bigMapZchange = false;
+    this._bigMapZroom = null;
 
     //variables used to track new x + y variables for map dragging
     this._ox = 0;
@@ -433,6 +437,27 @@ class GameMap {
           mapUpdateNeeded = true;
         }
 
+        //check to see if the room name in the database differs from live
+        let curRoomName = data.Name.toLowerCase().trim();
+        if (movingTo.name !== curRoomName) {
+          movingTo.name = curRoomName;
+          mapUpdateNeeded = true;
+        }
+
+        //The following code is likely unneeded but I need to verify in
+        //production once room changes have been published. This is fall back
+        //in case the room to id code maping doesn't properly update the room
+        //check to see if the room exits in the database differ from live
+        /*
+        for (let exit of data.ObviousExits) {
+          exit = translateDir(exit);
+          if ( !movingTo.exits.hasOwnProperty(exit) ) {
+            movingTo.exits[exit] = -1;
+            mapUpdateNeeded = true;
+          }
+        }
+        */
+
         if (mapUpdateNeeded) {
           updateRoom(prevRoom)
             .then(function() { return updateRoom(movingTo); })
@@ -453,6 +478,8 @@ class GameMap {
   draw(ctx, roomSize, drawSize, currentRoomID) {
     let x;
     let y;
+    //reset the last map draw
+    this._lastMapDraw = {};
 
     if (this._bigMapWin) {
       x = this._ox;
@@ -463,15 +490,8 @@ class GameMap {
     }
 
     let roomQueue  = [];
-    let roomsToDraw = drawSize;
-    let drawn = [];
-
-    let lookup = {};
-    let len = this._rooms.length;
-
-    for (let i = 0; i < len; i++) {
-      lookup[this._rooms[i].id] = this._rooms[i];
-    }
+    //let roomsToDraw = drawSize;
+    let drawn = {};
 
     //clear the canvas
     ctx.beginPath();
@@ -479,33 +499,57 @@ class GameMap {
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
+    //Add the curernt room to the draw queue to start the map
     roomQueue.push({
-      'id':currentRoomID,
-      'position':[x,y]
+      'id': currentRoomID,
+      'position': { 'x': x , 'y': y }
     });
 
-    //the current room is drawn to the center of the canvas as a start
-    //position.  It also gets special formatting
-    ctx.rect(x, y, roomSize, roomSize);
-    ctx.strokeStyle = 'white';
-    ctx.fillStyle = 'greenyellow';
-    ctx.fill();
-    ctx.stroke();
+    while (roomQueue.length) {
+      x = roomQueue[0].position.x;
+      y = roomQueue[0].position.y;
+      let drawId = roomQueue[0].id;
 
-    //add it to the drawn array so it won't be redrawn
-    drawn.push(currentRoomID);
+      //draw room
+      if (drawId === currentRoomID) {
+        ctx.fillStyle = 'greenyellow';
+        ctx.lineWidth = 1;
+      } else {
+        ctx.fillStyle = 'black';
+        ctx.lineWidth = 1;
+      }
 
-    //reset the fill style
-    ctx.fillStyle = 'black';
+      //give orange border if the room has an up or down exit
+      let curRoom = this._rooms[drawId];
+      if ( curRoom.exits.u || curRoom.exits.d ) {
+        ctx.strokeStyle = 'orange';
 
-    let i = 0;
-    while ( (roomQueue.length > 0) && (i < roomsToDraw) ) {
-      x = roomQueue[0].position[0];
-      y = roomQueue[0].position[1];
-      let parentId = roomQueue[0].id;
+      } else if (curRoom.altName && curRoom.altName !== '') {
+        ctx.strokeStyle = 'lime';
+
+      } else {
+        ctx.strokeStyle = 'white';
+      }
+
+      ctx.beginPath();
+      ctx.rect(x, y, roomSize, roomSize);
+      ctx.fill();
+      ctx.stroke();
+
+      //add the room to a mapping variable that the class can use in the big map
+      this._lastMapDraw[drawId] = {
+        'pos': { 'x': x, 'y': y }
+      };
+
+      //mark the room as drawn so it won't be redrawn
+      drawn[drawId] = true;
 
       //loop through each of the room's exits
-      for (let exit in lookup[parentId].exits) {
+      let exitKeys = Object.keys(curRoom.exits);
+      let len = exitKeys.length;
+
+      for (let i = 0; i < len; i++) {
+      //for (let exit in exitCheck.exits) {
         //variables for the connector and room x y coordinates
         let scx = x;
         let scy = y;
@@ -514,161 +558,114 @@ class GameMap {
         let rx = x;
         let ry = y;
 
-        let exitId = lookup[parentId].exits[exit];
+        let exitId = curRoom.exits[exitKeys[i]];
+        //let inQueue = this._containsRoom(exitId, roomQueue);
+        if (!drawn[exitId]) {
+          //determine the x y coordinates for the draw based on direction
+          switch (exitKeys[i]) {
+            case 'n':
+              scx = x + (roomSize / 2);
+              ecx = scx;
+              ecy = y - roomSize;
+              ry = y - (roomSize * 2);
+              break;
 
-        //determine the x y coordinates for the draw based on direction
-        switch (exit) {
-          case 'n':
-            scx = x + (roomSize / 2);
-            ecx = scx;
-            ecy = y - roomSize;
-            ry = y - (roomSize * 2);
-            break;
+            case 's':
+              scx = x + (roomSize / 2);
+              ecx = scx;
+              scy = y + roomSize;
+              ecy = y + (roomSize * 2);
+              ry = y + (roomSize * 2);
+              break;
 
-          case 's':
-            scx = x + (roomSize / 2);
-            ecx = scx;
-            scy = y + roomSize;
-            ecy = y + (roomSize * 2);
-            ry = y + (roomSize * 2);
-            break;
+            case 'e':
+              scx = x + roomSize;
+              ecx = x + (roomSize * 2);
+              scy = y + (roomSize / 2);
+              ecy = scy;
+              rx = x + (roomSize * 2);
+              break;
 
-          case 'e':
-            scx = x + roomSize;
-            ecx = x + (roomSize * 2);
-            scy = y + (roomSize / 2);
-            ecy = scy;
-            rx = x + (roomSize * 2);
-            break;
+            case 'w':
+              ecx = x - roomSize;
+              scy = y + (roomSize / 2);
+              ecy = scy;
+              rx = x - (roomSize * 2);
+              break;
 
-          case 'w':
-            ecx = x - roomSize;
-            scy = y + (roomSize / 2);
-            ecy = scy;
-            rx = x - (roomSize * 2);
-            break;
+            case 'ne':
+              scx = x + roomSize;
+              ecx = x + (roomSize * 2);
+              ecy = y - roomSize;
+              rx = x + (roomSize * 2);
+              ry = y - (roomSize * 2);
+              break;
 
-          case 'ne':
-            scx = x + roomSize;
-            ecx = x + (roomSize * 2);
-            ecy = y - roomSize;
-            rx = x + (roomSize * 2);
-            ry = y - (roomSize * 2);
-            break;
+            case 'se':
+              scx = x + roomSize;
+              ecx = x + (roomSize * 2);
+              scy = y + roomSize;
+              ecy = y + (roomSize * 2);
+              rx = x + (roomSize * 2);
+              ry = y + (roomSize * 2);
+              break;
 
-          case 'se':
-            scx = x + roomSize;
-            ecx = x + (roomSize * 2);
-            scy = y + roomSize;
-            ecy = y + (roomSize * 2);
-            rx = x + (roomSize * 2);
-            ry = y + (roomSize * 2);
-            break;
+            case 'nw':
+              ecx = x - roomSize;
+              ecy = y - roomSize;
+              rx = x - (roomSize * 2);
+              ry = y - (roomSize * 2);
+              break;
 
-          case 'nw':
-            ecx = x - roomSize;
-            ecy = y - roomSize;
-            rx = x - (roomSize * 2);
-            ry = y - (roomSize * 2);
-            break;
+            case 'sw':
+              ecx = x - roomSize;
+              scy = y + roomSize;
+              ecy = y + (roomSize * 2);
+              rx = x - (roomSize * 2);
+              ry = y + (roomSize * 2);
+              break;
 
-          case 'sw':
-            ecx = x - roomSize;
-            scy = y + roomSize;
-            ecy = y + (roomSize * 2);
-            rx = x - (roomSize * 2);
-            ry = y + (roomSize * 2);
-            break;
+            default:
 
-          case 'u':
-            ctx.strokeStyle = 'orange';
-            break;
-
-          case 'd':
-            ctx.strokeStyle = 'orange';
-            break;
-
-          default:
-
-        }
-
-        //set the stroke color for the connector
-        if (exitId === -1) {
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 3;
-        } else {
-          ctx.strokeStyle = 'white';
-          ctx.lineWidth = 1;
-        }
-
-        //draw connector
-        ctx.beginPath();
-        ctx.moveTo(scx,scy);
-        ctx.lineTo(ecx,ecy);
-        ctx.stroke();
-
-        if (lookup[parentId].exits[exit] !== -1) {
-          //draw room
-
-          if (exitId === currentRoomID) {
-            ctx.fillStyle = 'greenyellow';
-            ctx.lineWidth = 1;
-          } else {
-            ctx.fillStyle = 'black';
-            ctx.lineWidth = 1;
           }
 
-          //give orange border if the rooms has an up or down exit
-          let exitCheck = lookup[exitId];
-          if ( exitCheck.exits.hasOwnProperty('u') || exitCheck.exits.hasOwnProperty('d') ) {
-            ctx.strokeStyle = 'orange';
-
-          } else if (exitCheck.altName && exitCheck.altName !== '') {
-            ctx.strokeStyle = 'lime';
-
+          //set the stroke color for the connector
+          if (exitId === -1) {
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 3;
           } else {
             ctx.strokeStyle = 'white';
+            ctx.lineWidth = 1;
           }
 
-          ctx.rect(rx, ry, roomSize, roomSize);
-          ctx.fill();
+          //draw connector
+          ctx.beginPath();
+          ctx.moveTo(scx,scy);
+          ctx.lineTo(ecx,ecy);
           ctx.stroke();
 
-          this._lastMapDraw[exitId] = {
-            'name': lookup[exitId].name,
-            'altName': lookup[exitId].altName,
-            'pos': { 'x': rx, 'y':ry },
-            'size': roomSize
-          };
-
-          //add connected room to the drawing queue except if it's an exit
-          //that changes z plane or if it's already been drawn
-          if ( !(exit === 'u' || exit === 'd') &&
-              drawn.indexOf(lookup[parentId].exits[exit]) === -1 ) {
-
+          if (!roomQueue.includes(exitId) && exitId !== -1 &&
+              exitKeys[i] !== 'u' && exitKeys[i] !== 'd') {
+            //add connected room to the drawing queue except if it's an exit that
+            //changes z plane, has already been drawn, or has not yet been explored
             roomQueue.push({
               'id':exitId,
-              'position':[rx,ry]
+              'position': { 'x': rx , 'y': ry }
             });
+
           }
+        } //end check if room already drawn
 
-        }
-
-        //add it to the drawn array so it won't be redrawn
-        if (exitId !== -1) {
-          drawn.push(exitId);
-        }
-      }  //end for exits loop
+      } //end the draw exits loop
 
       //remove the completed room from the queue for the next loop
       roomQueue.shift();
-      i++;
+      //i++;
 
     }  //end for roomsToDraw loop
   }  //end draw method
 
   drawMap(ctx, roomSize, drawSize, currentRoomID) {
-    this._lastMapDraw = {};
 
     getLastWrite()
       .then(result => {
@@ -678,7 +675,15 @@ class GameMap {
           let store = txn.objectStore('rooms');
 
           store.getAll().onsuccess = function(event) {
-            this._rooms = event.target.result;
+            //create the rooms object using the id as a lookup key and the room
+            //object as the value
+            let len = event.target.result.length;
+
+            for (let i = 0; i < len; i++) {
+              this._rooms[event.target.result[i].id] = event.target.result[i];
+            }
+
+            //this._rooms = event.target.result;
             this._lastMapRead = Date.now();
 
             this.draw(ctx, roomSize, drawSize, currentRoomID);
@@ -710,10 +715,42 @@ class GameMap {
   }
 
   startBigMap() {
+    let playerName = document.title.split(' - ')[0];
+
     this._bigMapWin = window.open('', 'map');
 
     this._bigMapWin.document.open();
-    this._bigMapWin.document.write("<link href='http://webmud.com/Content/css' rel='stylesheet'/><canvas id='bigMapCanvas'></canvas><p><div><div style='float:left'><div style='margin:0 auto'>Click and drag to move the map.<br />Hover over a room for detail<br />Shift+click a room to walk to that room.<br />Shift+right_click to run to that room<br />Scroll to zoom in/out<br />Right click to re-center the map</div></div><div style='margin:0 auto; width:50%'><span id='bigName'></span><br /><span id='bigAltName'></span></div></div></p>");
+    this._bigMapWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Map:${ playerName }</title>
+        </head>
+        <body>
+          <link href='http://webmud.com/Content/css' rel='stylesheet'/>
+          <canvas id='bigMapCanvas'></canvas>
+          <p>
+            <div>
+              <div style='float:left'>
+                <div style='margin:0 auto'>Click and drag to move the map.
+                  <br />Hover over a room for detail
+                  <br />Shift+click a room to walk to that room.
+                  <br />Shift+right_click to run to that room
+                  <br />Alt+left click to follow a room's exit down
+                  <br />Alt+right click to follow a room's exit up
+                  <br />Scroll to zoom in/out
+                  <br />Right click to re-center the map
+                </div>
+              </div>
+              <div style='margin:0 auto; width:50%'>
+                <span id='bigName'></span><br />
+                <span id='bigAltName'></span><br />
+                <span id='bigExits'></span><br />
+              </div>
+            </div>
+          </p>
+        </body>
+      </html>`);
     this._bigMapWin.document.close();
 
     //blank the old map so the user doesn't get confused
@@ -746,25 +783,29 @@ class GameMap {
         const xDelt = Math.abs(this._ox - this._lx);
         const yDelt = Math.abs(this._oy - this._ly);
 
-        if (xDelt >= 2 || yDelt >= 2) {
+        if (xDelt >= 30 || yDelt >= 30) {
           this._lx = this._ox;
           this._ly = this._oy;
-          this.drawMap(ctx, room_size, map_size, curRoomID);
+
+          this._drawBigMap();
         }
 
 
       } else {
         //if not dragging, do mouseover text
-        let room = this._lastMapDraw[this._getMapRoom(mousePos)];
+        let room = this._getMapRoom(mousePos);
         let outputName = this._bigMapWin.document.getElementById('bigName');
         let outputAltName = this._bigMapWin.document.getElementById('bigAltName');
+        let outputExits = this._bigMapWin.document.getElementById('bigExits');
 
         if (room) {
           outputName.innerHTML = 'Room Name: ' + room.name;
           outputAltName.innerHTML = 'Alt Name: ' + room.altName;
+          outputExits.innerHTML = 'Exits: ' + Object.keys(room.exits).join(', ');
         } else {
           outputName.innerHTML = '';
           outputAltName.innerHTML = '';
+          outputExits.innerHTML = '';
         }
 
 
@@ -793,7 +834,7 @@ class GameMap {
       this._ox = (canvas.width / 2) - (room_size / 2);
       this._oy = (canvas.height / 2) - (room_size / 2);
 
-      this.drawMap(ctx, room_size, map_size, curRoomID);
+      this._drawBigMap();
     }), false);
 
     this._bigMapWin.addEventListener('beforeunload', (() => {
@@ -803,10 +844,15 @@ class GameMap {
       document.getElementById('divMap').hidden = false;
       ctx = document.getElementById('mapCanvas').getContext('2d');
 
+      //reset map draw center
       this._ox = (ctx.canvas.width / 2) - (room_size / 2);
       this._oy = (ctx.canvas.height / 2) - (room_size / 2);
 
-      this.drawMap(ctx, room_size, map_size, curRoomID);
+      //reset z plane change variables
+      this._bigMapZchange = false;
+      this._bigMapZroom = null;
+
+      this._drawBigMap();
     }), false);
 
     this._bigMapWin.addEventListener('contextmenu', (evt => {
@@ -828,60 +874,95 @@ class GameMap {
         room_size -= 1;
       }
 
-      this.drawMap(ctx, room_size, map_size, curRoomID);
+      this._drawBigMap();
     }), false);
 
   } //end startBigMap
 
   _handleMapClick(event) {
     const clickPos = this._getMousePos(ctx.canvas, event);
-    const dest = this._getMapRoom(clickPos);
+    const room = this._getMapRoom(clickPos);
+    const shift = event.shiftKey;
+    const alt = event.altKey;
+    const button = event.button;
 
-    if (event.shiftKey) {
+    if (shift && !alt) {
       let type;
 
       //set the walk type based on the mouse button used
-      if (event.button === 0) {
+      if (button === 0) {
         //left click
         type = 'walk';
-      } else if (event.button === 2) {
+      } else if (button === 2) {
         //right click
         type = 'run';
       }
 
-      if (dest) {
-        getRoom(dest)
-          .then(result => {
-            autoMapGo(curRoomID, dest, result.name, type);
-          })
-          .catch(err => {
-            console.error(err);
-          });
+      if (room) {
+        autoMapGo(curRoomID, room.id, room.name, type);
       }
 
-    } else if (event.button === 2 && !event.shiftKey) {
+    } else if (alt && !shift) {
+      //alt click means follow the selected room up/down to the next Z level
+
+      if (room) {
+        const exitUp = room.exits.u;
+        const exitDown = room.exits.d;
+
+        if (button === 0 && exitDown) {
+          //left click, go down
+          this._bigMapZchange = true;
+          this._bigMapZroom = exitDown;
+
+          this._ox = clickPos.x;
+          this._oy = clickPos.y;
+
+        } else if (button === 2 && exitUp) {
+          //right click, go up
+          this._bigMapZchange = true;
+          this._bigMapZroom = exitUp;
+
+          this._ox = clickPos.x;
+          this._oy = clickPos.y;
+        }
+
+        this._drawBigMap();
+
+      }
+
+    } else if (button === 2 && !shift && !alt) {
       //right click without shift modifier resets draw position
       this._ox = (ctx.canvas.width / 2) - (room_size / 2);
       this._oy = (ctx.canvas.height / 2) - (room_size / 2);
 
-      this.drawMap(ctx, room_size, map_size, curRoomID);
+      this._bigMapZchange = false;
+      this._bigMapZroom = null;
+
+      this._drawBigMap();
     }
 
   }
+
   _getMapRoom(clickPos) {
-    for (let room in this._lastMapDraw) {
-      const minX = this._lastMapDraw[room].pos.x;
-      const maxX = this._lastMapDraw[room].pos.x + room_size;
-      const minY = this._lastMapDraw[room].pos.y;
-      const maxY = this._lastMapDraw[room].pos.y + room_size;
+    let keys = Object.keys(this._lastMapDraw);
+    let len = keys.length;
 
-      if (clickPos.x > minX && clickPos.x < maxX &&
-          clickPos.y > minY && clickPos.y < maxY) {
+    for (let i = 0; i < len; i++) {
+      let room = this._lastMapDraw[keys[i]];
 
-        return room;
+      if (room.pos) {
+        const minX = room.pos.x;
+        const maxX = room.pos.x + room_size;
+        const minY = room.pos.y;
+        const maxY = room.pos.y + room_size;
+
+        if (clickPos.x > minX && clickPos.x < maxX &&
+            clickPos.y > minY && clickPos.y < maxY) {
+
+          return this._rooms[keys[i]];
+        }
       }
     }
-
     return false;
   }
 
@@ -893,6 +974,27 @@ class GameMap {
     };
 
   }
+
+  _drawBigMap() {
+    //custom draw function for the big map to handle change in z axis (up/down)
+    let drawRoomID;
+    if (this._bigMapZchange) {
+      drawRoomID = this._bigMapZroom;
+    } else {
+      drawRoomID = curRoomID;
+    }
+
+    this.drawMap(ctx, room_size, map_size, drawRoomID);
+  }
+
+  _containsRoom(roomId, array) {
+    for (let room in array) {
+      if (room.id === roomId) {
+        return true;
+      }
+    }
+    return false;
+  } //end _containsRoom
 }  //end Map class
 
 class Room {
